@@ -10,6 +10,12 @@
 | --- | --- | --- |
 | [dafushan-guide](dafushan-guide) | 广州番禺大夫山森林公园适老化智能导览 | https://starfish85.github.io/personal-projects/dafushan-guide/ |
 
+## 其他
+
+| 目录 | 说明 |
+| --- | --- |
+| [wechat-checkin](wechat-checkin) | 暑假学校微信小程序签到打卡（AutoJs6，真实定位） |
+
 ## Python 练手
 
 | 目录 | 项目 | 技术 |
@@ -32,6 +38,7 @@
 personal-projects/
   README.md
   dafushan-guide/        ← 产品
+  wechat-checkin/        ← 暑假打卡
   practice/              ← Python 练手
   your-new-app/          ← 新产品直接新建文件夹
 ```

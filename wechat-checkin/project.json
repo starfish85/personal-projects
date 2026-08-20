@@ -1,0 +1,8 @@
+{
+  "name": "暑假签到打卡",
+  "main": "main.js",
+  "ignore": ["logs/*"],
+  "packageName": "com.liuhx.summer.checkin",
+  "versionName": "1.0.0",
+  "versionCode": 1
+}

@@ -1,0 +1,17 @@
+{
+  "name": "刘海欣",
+  "className": "计算机类2503班",
+  "miniProgramName": "打卡签到表",
+  "activityTitle": "暑假签到打卡",
+  "signButton": "点击签到",
+  "dryRun": true,
+  "showConsole": true,
+  "swipeUnlock": true,
+  "timeoutsMs": {
+    "wechat": 15000,
+    "page": 8000,
+    "map": 15000,
+    "gpsSettle": 2500,
+    "result": 5000
+  }
+}
