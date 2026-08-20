@@ -11,6 +11,3 @@ env/
 
 *.log
 爬虫.py
-
-docs/*
-!docs/

@@ -1,0 +1,79 @@
+﻿flowchart TD
+    Start["用户打开注册登录系统"] --> Mode{"选择功能"}
+
+    subgraph Register["注册流程"]
+        R1["填写用户名、密码、确认密码、邮箱<br/>同步：Tkinter 主线程"] --> R2["校验用户名长度、密码长度<br/>同步"]
+        R2 --> R3{"两次密码是否一致？"}
+        R3 -- "否" --> RError["提示注册错误<br/>同步返回注册页"]
+        R3 -- "是" --> R4["校验邮箱格式<br/>同步"]
+        R4 --> R5{"邮箱格式正确？"}
+        R5 -- "否" --> RError
+        R5 -- "是" --> R6["启动注册后台线程<br/>异步：避免阻塞界面"]
+        R6 --> R7["bcrypt 生成盐并哈希密码<br/>异步"]
+        R7 --> R8["MySQL 查询用户名/邮箱并 INSERT 用户<br/>异步：提交事务"]
+        R8 --> R9{"写入是否成功？"}
+        R9 -- "否" --> RFail["回传数据库错误或重复账号<br/>异步回调主线程提示"]
+        R9 -- "是" --> RSuccess["注册成功<br/>root.after 回到主线程"]
+        RSuccess --> LoginPage["切换登录页并填入用户名<br/>同步：UI 更新"]
+    end
+
+    subgraph Login["登录系统"]
+        L1["输入用户名、密码<br/>勾选/取消‘记住我’<br/>同步：UI 读取"] --> L2{"用户名和密码是否为空？"}
+        L2 -- "是" --> LError["提示输入不完整<br/>同步返回登录页"]
+        L2 -- "否" --> L3["启动登录后台线程<br/>异步"]
+        L3 --> LockCheck["Redis 查询 login_locked 用户锁状态<br/>异步"]
+        LockCheck --> LockedBefore{"当前已锁定？"}
+        LockedBefore -- "是" --> LockedMessage["回传剩余锁定时间<br/>异步回调主线程显示提示"]
+        LockedMessage --> Countdown["每秒定时触发后台查询<br/>异步：倒计时不阻塞 Tkinter"]
+        Countdown --> LockCheck
+        LockedBefore -- "否" --> DBQuery["MySQL 查询用户<br/>异步"]
+        DBQuery --> PasswordCheck["bcrypt 校验密码<br/>异步"]
+        PasswordCheck --> LoginOK{"密码是否正确？"}
+        LoginOK -- "是" --> Reset["Redis 删除失败次数和锁定键<br/>异步"]
+        Reset --> Remember{"是否勾选‘记住我’？"}
+        Remember -- "是" --> SaveCache["写入 login_cache.json<br/>同步：登录成功回调中执行"]
+        Remember -- "否" --> ClearCache["删除 login_cache.json<br/>同步：登录成功回调中执行"]
+        SaveCache --> Welcome["root.after 更新欢迎页<br/>同步：Tkinter 主线程"]
+        ClearCache --> Welcome
+        LoginOK -- "否" --> Record["Redis INCR login_failed 用户失败次数<br/>首次失败设置 5 分钟 TTL<br/>异步"]
+        Record --> AttemptLimit{"失败次数达到 3 次？"}
+        AttemptLimit -- "否" --> LoginError["回传用户名或密码错误<br/>异步回调主线程提示"]
+        AttemptLimit -- "是" --> LockSet
+    end
+
+    subgraph Lock["输错锁定流程"]
+        LockSet["Redis SETEX login_locked<br/>锁定 120 秒并清除失败计数<br/>异步"] --> LockUI["主线程禁用登录按钮<br/>显示剩余时间"]
+        LockUI --> LockWait["等待锁定 TTL 到期"]
+        LockWait --> LockCheck
+    end
+
+    subgraph AutoLogin["记住我自动登录"]
+        A1["启动时读取 login_cache.json<br/>同步"] --> A2{"存在 remember=true？"}
+        A2 -- "否" --> LoginPage
+        A2 -- "是" --> A3["后台线程异步查询 Redis 锁状态"]
+        A3 --> A4{"账号已锁定？"}
+        A4 -- "是" --> LockedMessage
+        A4 -- "否" --> Welcome
+    end
+
+    Mode -- "注册" --> R1
+    Mode -- "登录" --> L1
+    Start --> A1
+    RError --> R1
+    RFail --> R1
+    LError --> L1
+    LoginError --> L1
+    RSuccess -. "异步任务完成后" .-> LoginPage
+
+    classDef sync fill:#ffe7e7,stroke:#c62828,color:#111;
+    classDef async fill:#e7f2ff,stroke:#1565c0,color:#111;
+    classDef decision fill:#fff7d6,stroke:#8a6d00,color:#111;
+    classDef success fill:#e8f5e9,stroke:#2e7d32,color:#111;
+    classDef locked fill:#fbe9e7,stroke:#d84315,color:#111;
+
+    class Start,Mode,R1,R2,R3,R4,R5,R6,R7,R8,R9,RError,RFail,RSuccess,LoginPage,L1,L2,L3,LockedMessage,Countdown,Welcome,SaveCache,ClearCache,A1,A2,A3,A4 sync;
+    class R6,R7,R8,RFail,RSuccess,L3,LockCheck,Countdown,DBQuery,PasswordCheck,Reset,Record,LockSet,A3 async;
+    class Mode,R3,R5,R9,L2,LockedBefore,LoginOK,Remember,AttemptLimit,A2,A4 decision;
+    class RSuccess,Welcome,SaveCache success;
+    class LockedBefore,LockedMessage,LockSet,LockUI,LockWait locked;
+
