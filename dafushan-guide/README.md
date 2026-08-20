@@ -26,11 +26,11 @@ npm run dev
 
 ## 固定网址（扫码即用）
 
-线上地址：https://starfish85.github.io/dafushan-guide/
+线上地址：https://starfish85.github.io/personal-projects/dafushan-guide/
 
 源码：https://github.com/starfish85/personal-projects/tree/main/dafushan-guide
 
-这是 GitHub Pages 的 https 地址，电脑不用开着也能扫码打开。更新网页后在 `dafushan-guide` 目录运行 `./scripts/publish-pages.sh` 会重新发布（仍发布到原来的演示仓库，扫码地址不变）。
+这是 GitHub Pages 的 https 地址，电脑不用开着也能扫码打开。更新网页后在 `dafushan-guide` 目录运行 `./scripts/publish-pages.sh` 会重新发布。
 
 ## 现场演示（真定位必须用 https）
 

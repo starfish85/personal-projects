@@ -8,7 +8,7 @@
 
 | 目录 | 说明 | 演示 |
 | --- | --- | --- |
-| [dafushan-guide](dafushan-guide) | 广州番禺大夫山森林公园适老化智能导览 | https://starfish85.github.io/dafushan-guide/ |
+| [dafushan-guide](dafushan-guide) | 广州番禺大夫山森林公园适老化智能导览 | https://starfish85.github.io/personal-projects/dafushan-guide/ |
 
 ## Python 练手
 
@@ -39,4 +39,4 @@ personal-projects/
 1. 练手项目放到 `practice/`，产品放到仓库根目录的独立文件夹。
 2. 项目自己的 README 写清楚怎么运行。
 3. 回到根目录 README，把新项目加进对应表格。
-4. 需要单独演示网址时，可以再配 GitHub Pages；大夫山的演示仍发布到原来的 `dafushan-guide` Pages，扫码地址不变。
+4. 需要单独演示网址时，在对应项目里发布到本仓库的 `gh-pages`。大夫山演示：https://starfish85.github.io/personal-projects/dafushan-guide/
