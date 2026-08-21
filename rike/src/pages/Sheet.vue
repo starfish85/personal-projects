@@ -129,7 +129,7 @@ function zoom(factor) {
 function goHome() {
   hideTools()
   studio.notesOpen = false
-  router.push('/')
+  router.push('/guitar')
 }
 
 onActivated(() => {

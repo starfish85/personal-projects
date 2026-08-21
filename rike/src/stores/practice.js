@@ -5,6 +5,7 @@ import { compressImage, ImageError } from '../utils/image'
 import { toast } from './ui'
 
 export const TASK_ID = 'guitar'
+export const DRAW_ID = 'drawing'
 
 export const practice = reactive({
   ready: false,
@@ -14,6 +15,7 @@ export const practice = reactive({
   completedAt: null,
   sheets: [],
   notes: [],
+  checkins: [],
 })
 
 function readInk() {
@@ -61,6 +63,7 @@ function viewAsset(asset) {
     height: asset.height,
     createdAt: asset.createdAt,
     order: asset.order,
+    date: asset.date || null,
     url,
     thumbUrl,
   }
@@ -105,6 +108,19 @@ async function saveDay() {
     updatedAt: new Date().toISOString(),
   })
 }
+
+export function dayComplete(taskId, record) {
+  if (!record || !record.count) return false
+  if (taskId === DRAW_ID) return record.count > 0
+  if (record.completedAt) return true
+  if (record.target && record.count >= record.target) return true
+  return false
+}
+
+export const TASK_META = [
+  { id: TASK_ID, title: '练习吉他', color: 'guitar' },
+  { id: DRAW_ID, title: '画画', color: 'draw' },
+]
 
 export async function listDays(taskId = TASK_ID) {
   const kv = await db.kvGetAll()
@@ -152,14 +168,91 @@ export async function loadAssets() {
   }
 }
 
+export async function loadCheckins() {
+  const rows = await db.assetsByRole(DRAW_ID, 'checkin')
+  revokeList(practice.checkins)
+  practice.checkins = rows.map(viewAsset)
+}
+
+export function checkinsOn(date) {
+  return practice.checkins.filter((item) => item.date === date)
+}
+
+async function syncDrawingDay(date) {
+  const n = practice.checkins.filter((item) => item.date === date).length
+  const key = `day.${DRAW_ID}.${date}`
+  if (n <= 0) {
+    await db.kvDelete(key)
+    return
+  }
+  const prev = await db.kvGet(key)
+  await db.kvSet(key, {
+    count: n,
+    completedAt: prev?.completedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  })
+}
+
+export async function addCheckins(fileList, date = practice.date) {
+  await ensureToday()
+  const files = [...fileList]
+  if (!files.length) return []
+  let order = practice.checkins.reduce((max, item) => Math.max(max, item.order || 0), 0)
+  const added = []
+  for (const file of files) {
+    try {
+      const packed = await compressImage(file)
+      order += 1
+      const asset = {
+        id: uid('a'),
+        taskId: DRAW_ID,
+        role: 'checkin',
+        date,
+        name: packed.name,
+        mime: packed.mime,
+        width: packed.width,
+        height: packed.height,
+        createdAt: new Date().toISOString(),
+        order,
+        blob: packed.blob,
+        thumbBlob: packed.thumbBlob,
+      }
+      await db.assetPut(asset)
+      added.push(asset.id)
+    } catch (error) {
+      if (error instanceof ImageError) toast(error.message)
+      else toast(quotaMessage(error))
+    }
+  }
+  await loadCheckins()
+  await syncDrawingDay(date)
+  return added
+}
+
+export async function removeCheckin(id) {
+  const item = practice.checkins.find((row) => row.id === id)
+  await db.assetDelete(id)
+  await loadCheckins()
+  if (item?.date) await syncDrawingDay(item.date)
+}
+
 export async function bootPractice() {
   try {
     await db.openDb()
     const task = await db.kvGet(`task.${TASK_ID}`)
     practice.task = task || { id: TASK_ID, title: '练习吉他', target: 10 }
     if (!task) await saveTask()
+    const drawing = await db.kvGet(`task.${DRAW_ID}`)
+    if (!drawing) {
+      await db.kvSet(`task.${DRAW_ID}`, {
+        id: DRAW_ID,
+        title: '画画',
+        completion: 'photo-log',
+      })
+    }
     await loadToday()
     await loadAssets()
+    await loadCheckins()
   } catch (error) {
     console.error(error)
     toast('本地数据打开失败，刷新试试')
@@ -234,4 +327,5 @@ export async function reloadAll() {
   practice.task = task || { id: TASK_ID, title: '练习吉他', target: 10 }
   await loadToday()
   await loadAssets()
+  await loadCheckins()
 }

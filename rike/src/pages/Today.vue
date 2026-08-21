@@ -57,7 +57,8 @@ async function onImport(event) {
 <template>
   <main class="page">
     <header class="head">
-      <p class="brand">日课</p>
+      <button type="button" class="back" @click="router.push('/')">返回</button>
+      <p class="brand">练习吉他</p>
       <p class="date">{{ practice.date }}</p>
     </header>
 
@@ -71,10 +72,6 @@ async function onImport(event) {
       <button class="card" type="button" @click="router.push('/notes')">
         <strong>乐理笔记</strong>
         <span>{{ practice.notes.length ? `${practice.notes.length} 张` : '把要背的图存这里' }}</span>
-      </button>
-      <button class="card" type="button" @click="router.push('/calendar')">
-        <strong>练习日历</strong>
-        <span>哪天练了有标记，点进去看那天的遍数</span>
       </button>
     </section>
 
@@ -110,16 +107,23 @@ async function onImport(event) {
 }
 
 .head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 36px;
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.back {
+  min-height: 44px;
+  color: var(--amber);
+  font-weight: 650;
+  text-align: left;
 }
 
 .brand {
   margin: 0;
-  font-size: 22px;
-  letter-spacing: 0.42em;
+  text-align: center;
+  font-size: 18px;
   font-weight: 650;
 }
 

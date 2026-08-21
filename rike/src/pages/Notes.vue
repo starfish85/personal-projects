@@ -27,7 +27,7 @@ async function onFiles(event) {
 <template>
   <main class="page">
     <header class="head">
-      <button type="button" class="back" @click="router.push('/')">返回</button>
+      <button type="button" class="back" @click="router.push('/guitar')">返回</button>
       <h1>乐理笔记</h1>
       <button type="button" class="add" @click="pick">添加</button>
     </header>

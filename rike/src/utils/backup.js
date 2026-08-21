@@ -18,6 +18,7 @@ export async function exportBackup() {
       height: asset.height,
       createdAt: asset.createdAt,
       order: asset.order,
+      date: asset.date || null,
       blobBase64: await blobToBase64(asset.blob),
       thumbBase64: asset.thumbBlob ? await blobToBase64(asset.thumbBlob) : '',
     })
@@ -64,6 +65,7 @@ export async function importBackup(file) {
       height: asset.height,
       createdAt: asset.createdAt,
       order: asset.order,
+      date: asset.date || null,
       blob: base64ToBlob(asset.blobBase64, asset.mime),
       thumbBlob: asset.thumbBase64 ? base64ToBlob(asset.thumbBase64, asset.mime) : null,
     })
