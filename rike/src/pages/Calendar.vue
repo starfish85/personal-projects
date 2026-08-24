@@ -3,6 +3,7 @@ import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PhotoViewer from '../components/PhotoViewer.vue'
 import {
+  addCheckins,
   checkinsOn,
   dayComplete,
   hasJournal,
@@ -31,6 +32,8 @@ const daysByTask = ref({})
 const viewerOpen = ref(false)
 const startIndex = ref(0)
 const viewerPhotos = ref([])
+const fileRef = ref(null)
+const uploadTaskId = ref('')
 
 const year = computed(() => cursor.value.getFullYear())
 const month = computed(() => cursor.value.getMonth())
@@ -113,6 +116,33 @@ function pick(dateKey) {
 
 function addTaskForSelected() {
   router.push({ path: '/', query: { add: '1', date: selected.value } })
+}
+
+function openGallery(taskId) {
+  router.push(`/gallery/${taskId}`)
+}
+
+function openTask(taskId) {
+  router.push(`/task/${taskId}`)
+}
+
+function editTask(taskId) {
+  router.push({ path: '/', query: { edit: taskId } })
+}
+
+function pickPhoto(taskId) {
+  if (!canCompleteTasks.value) return
+  uploadTaskId.value = taskId
+  fileRef.value?.click()
+}
+
+async function onFiles(event) {
+  const files = event.target.files
+  event.target.value = ''
+  if (!files?.length || !uploadTaskId.value) return
+  await addCheckins(files, selected.value, uploadTaskId.value)
+  uploadTaskId.value = ''
+  await refresh()
 }
 
 const viewerTaskId = ref(null)
@@ -242,6 +272,8 @@ onActivated(refresh)
                 <i />
               </button>
             </div>
+            <button v-if="isFuture" type="button" class="open inline" @click="editTask(task.id)">调整安排</button>
+            <button v-else-if="isToday" type="button" class="open inline" @click="openTask(task.id)">打开任务</button>
           </template>
           <template v-else-if="task.completion === 'photo-log'">
             <p v-if="isFuture && !record(task.id, selected)?.count" class="muted">已安排到这一天</p>
@@ -258,7 +290,10 @@ onActivated(refresh)
                   <img :src="item.thumbUrl" alt="" />
                 </button>
               </div>
+              <button type="button" class="open inline" @click="openGallery(task.id)">查看作品墙</button>
             </template>
+            <button v-if="isToday" type="button" class="open inline" @click="pickPhoto(task.id)">上传图片</button>
+            <button v-else-if="isFuture" type="button" class="open inline" @click="editTask(task.id)">调整安排</button>
             <p v-else-if="!isFuture" class="muted">未完成</p>
           </template>
           <template v-else-if="task.completion === 'counter'">
@@ -274,6 +309,8 @@ onActivated(refresh)
                 {{ formatClock(record(task.id, selected).completedAt) }}
               </p>
             </template>
+            <button v-if="isToday" type="button" class="open inline" @click="openTask(task.id)">打开任务</button>
+            <button v-else-if="isFuture" type="button" class="open inline" @click="editTask(task.id)">调整安排</button>
             <p v-else-if="!isFuture" class="muted">未完成</p>
           </template>
           <template v-else>
@@ -310,6 +347,8 @@ onActivated(refresh)
         </div>
       </template>
     </section>
+
+    <input ref="fileRef" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
 
     <PhotoViewer
       :open="viewerOpen"
@@ -461,6 +500,8 @@ onActivated(refresh)
   gap: 6px;
   margin: 0 0 8px;
   font-weight: 650;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .label i {
@@ -545,10 +586,15 @@ onActivated(refresh)
   color: var(--amber);
   font-weight: 650;
   min-height: 40px;
+  overflow-wrap: anywhere;
 }
 
 .day-actions .open {
   margin-top: 0;
+}
+
+.open.inline {
+  margin-top: 10px;
 }
 
 .subtasks {
@@ -615,5 +661,9 @@ onActivated(refresh)
 .day-check.on i {
   border-color: var(--ok);
   background: var(--ok);
+}
+
+.hidden {
+  display: none;
 }
 </style>

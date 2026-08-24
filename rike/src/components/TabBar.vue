@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { practice } from '../stores/practice'
+import { checkinsForTask, practice } from '../stores/practice'
 
 const route = useRoute()
 const router = useRouter()
@@ -9,6 +9,7 @@ const router = useRouter()
 const active = computed(() => {
   if (route.name === 'journal') return 'journal'
   if (route.name === 'calendar') return 'calendar'
+  if (route.name === 'gallery') return 'gallery'
   return 'home'
 })
 
@@ -22,6 +23,12 @@ function goJournal() {
 
 function goCalendar() {
   router.push('/calendar')
+}
+
+function goGallery() {
+  const taskWithPhotos = practice.tasks.find((task) => checkinsForTask(task.id).length)
+  const taskId = taskWithPhotos?.id || practice.task?.id || practice.tasks[0]?.id || ''
+  router.push(taskId ? `/gallery/${taskId}` : '/gallery')
 }
 </script>
 
@@ -39,6 +46,10 @@ function goCalendar() {
       <span class="ico cal" />
       <span>日历</span>
     </button>
+    <button type="button" class="tab" :class="{ on: active === 'gallery' }" @click="goGallery">
+      <span class="ico pic" />
+      <span>作品墙</span>
+    </button>
   </nav>
 </template>
 
@@ -52,7 +63,7 @@ function goCalendar() {
   height: var(--tab-h);
   padding-bottom: var(--safe-bottom);
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   background: var(--bg-elev);
   border-top: 1px solid var(--line);
 }
@@ -63,8 +74,9 @@ function goCalendar() {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  min-width: 0;
   color: var(--muted);
-  font-size: var(--fs-sm);
+  font-size: 12px;
 }
 
 .tab.on {
@@ -78,6 +90,10 @@ function goCalendar() {
 }
 
 @media (min-width: 700px) {
+  .tab {
+    font-size: var(--fs-sm);
+  }
+
   .ico {
     width: 26px;
     height: 26px;
@@ -140,6 +156,34 @@ function goCalendar() {
   right: 0;
   top: 5px;
   height: 2px;
+  background: currentColor;
+}
+
+.pic {
+  border: 2px solid currentColor;
+  border-radius: 4px;
+}
+
+.pic::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  height: 6px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: skew(-18deg);
+}
+
+.pic::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
   background: currentColor;
 }
 </style>

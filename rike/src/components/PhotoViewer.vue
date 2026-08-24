@@ -7,6 +7,7 @@ const props = defineProps({
   photos: { type: Array, default: () => [] },
   startIndex: { type: Number, default: 0 },
   title: { type: String, default: '画作' },
+  deletable: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['close', 'delete'])
@@ -28,7 +29,7 @@ watch(
     <header class="bar">
       <button type="button" class="text" @click="emit('close')">关闭</button>
       <strong>{{ title }}</strong>
-      <button v-if="photo" type="button" class="text danger" @click="emit('delete', photo.id)">
+      <button v-if="photo && deletable" type="button" class="text danger" @click="emit('delete', photo.id)">
         删除
       </button>
       <span v-else />
@@ -76,6 +77,8 @@ watch(
 
 .bar strong {
   text-align: center;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .text {

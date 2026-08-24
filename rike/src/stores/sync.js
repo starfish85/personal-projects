@@ -15,6 +15,7 @@ export const cloud = reactive({
   email: '',
   syncing: false,
   lastAt: '',
+  error: '',
 })
 
 let timer = 0
@@ -96,13 +97,9 @@ async function mergeJournals(rows) {
   for (const row of rows || []) {
     const date = row.date
     const localAt = practice.journalUpdatedAt[date] || ''
-    if (later(localAt, row.updated_at) && (practice.journalTexts[date] || '').length) continue
+    if (later(localAt, row.updated_at)) continue
     practice.journalTexts[date] = row.text || ''
     practice.journalUpdatedAt[date] = row.updated_at
-    if (!(row.text || '').trim()) {
-      await db.kvDelete(`journal.${date}`)
-      continue
-    }
     await db.kvSet(`journal.${date}`, { text: row.text || '', updatedAt: row.updated_at })
   }
 }
@@ -111,13 +108,9 @@ async function mergeTaskNotes(rows) {
   for (const row of rows || []) {
     const taskId = row.task_id
     const localAt = practice.taskNotesUpdatedAt[taskId] || ''
-    if (later(localAt, row.updated_at) && (practice.taskNotes[taskId] || '').length) continue
+    if (later(localAt, row.updated_at)) continue
     practice.taskNotes[taskId] = row.text || ''
     practice.taskNotesUpdatedAt[taskId] = row.updated_at
-    if (!(row.text || '').trim()) {
-      await db.kvDelete(`taskNote.${taskId}`)
-      continue
-    }
     await db.kvSet(`taskNote.${taskId}`, { text: row.text || '', updatedAt: row.updated_at })
   }
 }
@@ -208,11 +201,13 @@ export async function fullSync() {
   const client = getClient()
   if (!client || !cloud.user || cloud.syncing) return
   cloud.syncing = true
+  cloud.error = ''
   try {
     await pull(client, cloud.user.id)
     await push(client, cloud.user.id)
     cloud.lastAt = localDateKey() + ' ' + new Date().toTimeString().slice(0, 5)
   } catch (error) {
+    cloud.error = error.message || '同步失败'
     toast(error.message || '同步失败')
   } finally {
     cloud.syncing = false
@@ -231,6 +226,10 @@ export async function sendLogin(email) {
   const client = getClient()
   if (!client) {
     toast('先填写云项目')
+    return false
+  }
+  if (!email.trim()) {
+    toast('先填写邮箱')
     return false
   }
   const { error } = await client.auth.signInWithOtp({

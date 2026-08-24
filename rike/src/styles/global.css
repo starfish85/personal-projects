@@ -135,6 +135,9 @@ img {
 
 .modal-sheet {
   width: min(100%, var(--page-max));
+  max-height: min(86dvh, 720px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--bg-elev);
   border-radius: 20px 20px 0 0;
   padding: 20px 20px calc(20px + var(--safe-bottom));
@@ -165,6 +168,7 @@ img {
   padding: 0 16px;
   font-size: var(--fs-md);
   font-weight: 650;
+  overflow-wrap: anywhere;
 }
 
 .btn-primary {

@@ -19,13 +19,14 @@ export async function exportBackup() {
       createdAt: asset.createdAt,
       order: asset.order,
       date: asset.date || null,
+      featured: Boolean(asset.featured),
       blobBase64: await blobToBase64(asset.blob),
       thumbBase64: asset.thumbBlob ? await blobToBase64(asset.thumbBlob) : '',
     })
   }
   return {
     app: 'rike',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     kv,
     assets: packedAssets,
@@ -54,6 +55,7 @@ export async function importBackup(file) {
   for (const [key, value] of Object.entries(data.kv)) {
     await db.kvSet(key, value)
   }
+  await db.kvSet('schemaVersion', 0)
   for (const asset of data.assets) {
     await db.assetPut({
       id: asset.id,
@@ -66,6 +68,7 @@ export async function importBackup(file) {
       createdAt: asset.createdAt,
       order: asset.order,
       date: asset.date || null,
+      featured: Boolean(asset.featured),
       blob: base64ToBlob(asset.blobBase64, asset.mime),
       thumbBlob: asset.thumbBase64 ? base64ToBlob(asset.thumbBase64, asset.mime) : null,
     })

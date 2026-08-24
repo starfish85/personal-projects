@@ -1,5 +1,6 @@
 -- 在 Supabase SQL Editor 里整段执行一次。
--- 只存任务、每日完成、日记文字、任务批注。不存图片。
+-- 只存任务、模板、组件配置、每日完成、子任务每日状态、日记文字、任务批注。
+-- 不存图片打卡图片、曲谱图片、笔记图片、图片批注笔迹、日记图片。
 
 create table if not exists public.rike_meta (
   user_id uuid primary key references auth.users (id) on delete cascade,

@@ -1,4 +1,4 @@
-import { dayComplete, practice } from '../stores/practice'
+import { dayComplete, practice, taskOnDate } from '../stores/practice'
 import { toast } from '../stores/ui'
 import { localDateKey } from './date'
 
@@ -77,6 +77,7 @@ function fire(task) {
 }
 
 function due(task, hm, date) {
+  if (!taskOnDate(task, date)) return false
   if (!task.reminder) return false
   if (hm < task.reminder) return false
   if (already(date, task.id)) return false

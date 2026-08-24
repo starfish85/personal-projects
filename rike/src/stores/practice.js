@@ -22,44 +22,69 @@ export const TASK_TEMPLATES = [
   {
     id: 'instrument',
     title: '乐器练习',
+    defaultTitle: '练习乐器',
+    color: '#e2a23a',
     completion: 'counter',
     sheet: true,
     notes: true,
     components: ['counter', 'pomodoro', 'sheet', 'annotation', 'notes'],
+    summary: '计数、番茄钟、曲谱、批注、笔记',
   },
   {
     id: 'creative',
     title: '画画 / 创作',
+    defaultTitle: '每日创作',
+    color: '#7da9c7',
     completion: 'photo-log',
     sheet: false,
     notes: false,
     components: ['images', 'annotation', 'notes'],
+    summary: '图片打卡、作品图片、批注、日记',
   },
   {
     id: 'study',
     title: '学习 / 备考',
+    defaultTitle: '学习',
+    color: '#8fbf88',
     completion: 'counter',
     sheet: false,
     notes: true,
     components: ['pomodoro', 'notes'],
+    summary: '番茄钟、笔记、可添加子任务',
   },
   {
     id: 'fitness',
     title: '健身 / 康复',
+    defaultTitle: '运动',
+    color: '#d46a4c',
     completion: 'counter',
     sheet: false,
     notes: false,
     components: ['counter', 'pomodoro', 'images', 'notes'],
+    summary: '计数器、番茄钟、图片、日记',
   },
   {
     id: 'habit',
     title: '生活习惯',
+    defaultTitle: '生活习惯',
+    color: '#b08dcf',
     completion: 'check',
     sheet: false,
     notes: false,
     components: ['check', 'notes'],
+    summary: '普通打卡、可添加子任务、日记',
   },
-  { id: 'custom', title: '自定义', completion: 'check', sheet: false, notes: false, components: ['check'] },
+  {
+    id: 'custom',
+    title: '自定义',
+    defaultTitle: '',
+    color: '#5e9e8e',
+    completion: 'check',
+    sheet: false,
+    notes: false,
+    components: ['check'],
+    summary: '普通打卡',
+  },
 ]
 
 export const TASK_COLORS = [
@@ -142,6 +167,7 @@ function viewAsset(asset) {
     createdAt: asset.createdAt,
     order: asset.order,
     date: asset.date || null,
+    featured: Boolean(asset.featured),
     url,
     thumbUrl,
   }
@@ -240,6 +266,7 @@ export function taskTodayLine(task) {
 export function taskOnDate(task, date = localDateKey()) {
   if (!task) return false
   if (task.archived) return false
+  if (task.paused) return false
   if (task.longTerm) return true
   return (task.dueDate || localDateKey()) === date
 }
@@ -273,6 +300,7 @@ export function normalizeTask(task) {
     dueDate: task.dueDate || localDateKey(),
     longTerm: 'longTerm' in task ? Boolean(task.longTerm) : !task.dueDate,
     archived: Boolean(task.archived),
+    paused: Boolean(task.paused),
     subtasks: Array.isArray(task.subtasks)
       ? task.subtasks
           .map((item) => ({
@@ -308,6 +336,8 @@ function defaultTasks(guitar, drawing) {
       sheet: true,
       notes: true,
       components: DEFAULT_RICH_COMPONENTS,
+      dueDate: localDateKey(),
+      longTerm: true,
       order: 0,
     },
     {
@@ -324,7 +354,21 @@ function defaultTasks(guitar, drawing) {
   ]
 }
 
+async function migrateLocalData() {
+  const version = (await db.kvGet('schemaVersion')) || 0
+  if (version >= 2) return
+  const tasks = await db.kvGet('tasks')
+  if (!Array.isArray(tasks)) {
+    await db.kvSet('schemaVersion', 2)
+    return
+  }
+  const normalized = tasks.map(normalizeTask)
+  await db.kvSet('tasks', normalized)
+  await db.kvSet('schemaVersion', 2)
+}
+
 async function loadTasks() {
+  await migrateLocalData()
   let tasks = await db.kvGet('tasks')
   if (!Array.isArray(tasks)) {
     const guitar = await db.kvGet(`task.${TASK_ID}`)
@@ -382,6 +426,8 @@ export async function addTask({
     reminder: reminder || '',
     dueDate: dueDate || localDateKey(),
     longTerm: Boolean(longTerm),
+    paused: false,
+    archived: false,
     sheet: Boolean(sheet),
     notes: Boolean(notes),
     components: [...new Set(components || [])],
@@ -428,6 +474,8 @@ export async function updateTask(id, patch) {
   }
   if ('dueDate' in patch) task.dueDate = patch.dueDate || localDateKey()
   if ('longTerm' in patch) task.longTerm = Boolean(patch.longTerm)
+  if ('paused' in patch) task.paused = Boolean(patch.paused)
+  if ('archived' in patch) task.archived = Boolean(patch.archived)
   if ('subtasks' in patch) {
     task.subtasks = Array.isArray(patch.subtasks)
       ? patch.subtasks
@@ -453,9 +501,23 @@ export async function updateTask(id, patch) {
 export async function removeTask(id) {
   const index = practice.tasks.findIndex((item) => item.id === id)
   if (index < 0) return false
-  practice.tasks.splice(index, 1)
+  practice.tasks[index].archived = true
+  practice.tasks[index].pinned = false
+  practice.tasks[index].pinnedAt = 0
   await saveTasks()
-  if (practice.task.id === id) practice.task = practice.tasks[0] || practice.task
+  if (practice.task.id === id) {
+    practice.task = practice.tasks.find((item) => !item.archived && !item.paused) || practice.tasks[0] || practice.task
+  }
+  await refreshTodayMap()
+  return true
+}
+
+export async function restoreTask(id) {
+  const task = practice.tasks.find((item) => item.id === id)
+  if (!task) return false
+  task.archived = false
+  task.paused = false
+  await saveTasks()
   await refreshTodayMap()
   return true
 }
@@ -563,7 +625,6 @@ export async function loadAssets() {
 }
 
 export function taskHasComponent(id) {
-  if (practice.task.completion !== 'counter') return false
   const components = Array.isArray(practice.task.components) ? practice.task.components : []
   return components.includes(id)
 }
@@ -609,14 +670,13 @@ export async function saveTaskNote(taskId, text) {
   const clean = String(text || '')
   practice.taskNotes[taskId] = clean
   const key = `taskNote.${taskId}`
+  const updatedAt = new Date().toISOString()
+  practice.taskNotesUpdatedAt[taskId] = updatedAt
   if (!clean.trim()) {
-    await db.kvDelete(key)
-    delete practice.taskNotesUpdatedAt[taskId]
+    await db.kvSet(key, { text: '', updatedAt })
     notifyCloud()
     return
   }
-  const updatedAt = new Date().toISOString()
-  practice.taskNotesUpdatedAt[taskId] = updatedAt
   await db.kvSet(key, { text: clean, updatedAt })
   notifyCloud()
 }
@@ -634,14 +694,13 @@ async function saveJournalMeta(date) {
   const text = practice.journalTexts[date] || ''
   const photos = journalPhotosOn(date)
   const key = `journal.${date}`
+  const updatedAt = new Date().toISOString()
+  practice.journalUpdatedAt[date] = updatedAt
   if (!text.trim() && !photos.length) {
-    await db.kvDelete(key)
-    delete practice.journalUpdatedAt[date]
+    await db.kvSet(key, { text: '', updatedAt })
     notifyCloud()
     return
   }
-  const updatedAt = new Date().toISOString()
-  practice.journalUpdatedAt[date] = updatedAt
   await db.kvSet(key, { text, updatedAt })
   notifyCloud()
 }
@@ -700,11 +759,36 @@ export function checkinsOn(date, taskId) {
   })
 }
 
+export function checkinsForTask(taskId) {
+  return practice.checkins
+    .filter((item) => !taskId || item.taskId === taskId)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || b.order - a.order)
+}
+
+export async function toggleFeaturedCheckin(id) {
+  const item = await db.assetGet(id)
+  if (!item || item.role !== 'checkin') return false
+  await db.assetPut({
+    ...item,
+    featured: !item.featured,
+    updatedAt: new Date().toISOString(),
+  })
+  await loadCheckins()
+  return true
+}
+
 async function syncPhotoDay(taskId, date) {
   const n = practice.checkins.filter((item) => item.taskId === taskId && item.date === date).length
   const key = `day.${taskId}.${date}`
   if (n <= 0) {
-    await db.kvDelete(key)
+    const prev = await db.kvGet(key)
+    await db.kvSet(key, {
+      count: 0,
+      target: prev?.target ?? null,
+      completedAt: null,
+      subtasks: prev?.subtasks || {},
+      updatedAt: new Date().toISOString(),
+    })
     await refreshTodayMap()
     notifyCloud()
     return
@@ -740,6 +824,7 @@ export async function addCheckins(fileList, date = practice.date, taskId = pract
         height: packed.height,
         createdAt: new Date().toISOString(),
         order,
+        featured: false,
         blob: packed.blob,
         thumbBlob: packed.thumbBlob,
       }

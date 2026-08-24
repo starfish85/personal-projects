@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PhotoViewer from '../components/PhotoViewer.vue'
+import TaskHelpers from '../components/TaskHelpers.vue'
 import {
   addCheckins,
   checkinsOn,
@@ -47,6 +48,10 @@ function openAt(index) {
   viewerOpen.value = true
 }
 
+function openGallery() {
+  router.push(`/gallery/${practice.task.id}`)
+}
+
 async function onDelete(id) {
   const ok = await confirmDialog({
     title: '删除这张画？',
@@ -70,6 +75,9 @@ async function onDelete(id) {
     </header>
 
     <p v-if="doneToday" class="ok">{{ doneLabel }}</p>
+    <button v-if="todayPhotos.length" type="button" class="gallery-link" @click="openGallery">
+      查看作品墙
+    </button>
 
     <section v-if="subtasks.length" class="subtasks">
       <button
@@ -98,6 +106,8 @@ async function onDelete(id) {
         <img :src="item.thumbUrl" alt="" />
       </button>
     </section>
+
+    <TaskHelpers />
 
     <PhotoViewer
       :open="viewerOpen"
@@ -142,6 +152,12 @@ async function onDelete(id) {
 .ok {
   margin: 14px 0 18px;
   color: var(--ok);
+  font-weight: 650;
+}
+
+.gallery-link {
+  min-height: 40px;
+  color: var(--amber);
   font-weight: 650;
 }
 

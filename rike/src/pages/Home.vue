@@ -12,9 +12,11 @@ import {
   pinTask,
   practice,
   removeTask,
+  restoreTask,
   subtaskDone,
   taskTodayLine,
   taskDoneToday,
+  tasksOnDate,
   toggleCheck,
   toggleSubtask,
   updateTask,
@@ -31,6 +33,8 @@ const ACTION_W = 192
 const router = useRouter()
 const route = useRoute()
 const editor = ref(null)
+const editorStep = ref('details')
+const archiveOpen = ref(false)
 const timeOpen = ref(false)
 const openId = ref(null)
 const expandedId = ref(null)
@@ -46,6 +50,7 @@ const form = reactive({
   subtasks: [],
   dueDate: localDateKey(),
   longTerm: false,
+  paused: false,
 })
 const drag = reactive({
   id: null,
@@ -64,19 +69,27 @@ function applyTemplate(item) {
   form.notes = item.notes
   form.components = [...(item.components || [])]
   form.subtasks = []
-  if (!form.title || TASK_TEMPLATES.some((t) => t.title === form.title)) {
-    form.title = item.title
+  form.color = item.color || form.color
+  if (!form.title || TASK_TEMPLATES.some((t) => t.defaultTitle === form.title || t.title === form.title)) {
+    form.title = item.defaultTitle || item.title
   }
+}
+
+function chooseTemplate(item) {
+  applyTemplate(item)
+  editorStep.value = 'details'
 }
 
 function openAdd() {
   closeSwipe()
   form.title = ''
-  form.color = TASK_COLORS.find((c) => !practice.tasks.some((t) => t.color === c)) || TASK_COLORS[0]
   form.reminder = ''
   form.dueDate = String(route.query.date || localDateKey())
   form.longTerm = false
+  form.paused = false
   applyTemplate(TASK_TEMPLATES.find((item) => item.id === 'custom') || TASK_TEMPLATES[0])
+  form.color = TASK_COLORS.find((c) => !practice.tasks.some((t) => t.color === c)) || form.color
+  editorStep.value = 'template'
   editor.value = { mode: 'add' }
 }
 
@@ -92,10 +105,12 @@ function openEdit(task) {
   form.subtasks = Array.isArray(task.subtasks) ? task.subtasks.map((item) => ({ ...item })) : []
   form.dueDate = task.dueDate || localDateKey()
   form.longTerm = Boolean(task.longTerm)
+  form.paused = Boolean(task.paused)
   form.template =
     TASK_TEMPLATES.find((item) => item.id === task.template)?.id ||
     TASK_TEMPLATES.find((item) => item.completion === task.completion)?.id ||
     'custom'
+  editorStep.value = 'details'
   editor.value = { mode: 'edit', id: task.id }
 }
 
@@ -143,13 +158,24 @@ function openAddFromRoute() {
     openAdd()
     router.replace('/')
   }
+  if (route.query.edit) {
+    const id = Array.isArray(route.query.edit) ? route.query.edit[0] : route.query.edit
+    const task = practice.tasks.find((item) => item.id === id)
+    if (task) openEdit(task)
+    router.replace('/')
+  }
 }
 
 onMounted(openAddFromRoute)
-watch(() => route.query.add, openAddFromRoute)
+watch(() => [route.query.add, route.query.edit], openAddFromRoute)
 
 function closeEditor() {
   editor.value = null
+  editorStep.value = 'details'
+}
+
+function backToTemplate() {
+  editorStep.value = 'template'
 }
 
 async function saveEditor() {
@@ -167,6 +193,7 @@ async function saveEditor() {
       subtasks: cleanSubtasks(),
       dueDate: form.dueDate,
       longTerm: form.longTerm,
+      paused: form.paused,
     })
     if (task) {
       if (form.reminder) await ensureNotifyPermission()
@@ -185,6 +212,7 @@ async function saveEditor() {
     subtasks: cleanSubtasks(),
     dueDate: form.dueDate,
     longTerm: form.longTerm,
+    paused: form.paused,
   })
   if (ok) {
     if (form.reminder) await ensureNotifyPermission()
@@ -194,9 +222,9 @@ async function saveEditor() {
 
 async function deleteCurrent() {
   const ok = await confirmDialog({
-    title: '删除这个任务？',
-    copy: '首页和日历里不再出现它。以前的记录还在本机，只是不再计入进度。',
-    ok: '删除',
+    title: '归档这个任务？',
+    copy: '首页和日历里不再出现它。以前的记录和图片还在本机。',
+    ok: '归档',
     danger: true,
   })
   if (!ok) return
@@ -209,11 +237,7 @@ function isDone(task) {
 }
 
 function visibleTasks() {
-  return practice.tasks.filter((task) => {
-    if (task.archived) return false
-    if (task.longTerm) return true
-    return (task.dueDate || localDateKey()) === practice.date
-  }).sort((a, b) => {
+  return tasksOnDate(practice.date).sort((a, b) => {
     const ad = taskDoneToday(a) ? 1 : 0
     const bd = taskDoneToday(b) ? 1 : 0
     if (ad !== bd) return ad - bd
@@ -227,6 +251,18 @@ function visibleTasks() {
 
 function emptyCopy() {
   return practice.tasks.length ? '今天没有安排的日课' : '今天还没有任务'
+}
+
+function archivedTasks() {
+  return practice.tasks.filter((task) => task.archived)
+}
+
+function pausedTasks() {
+  return practice.tasks.filter((task) => !task.archived && task.paused)
+}
+
+function managedTasks() {
+  return [...pausedTasks(), ...archivedTasks()]
 }
 
 function hasSubtasks(task) {
@@ -331,9 +367,9 @@ async function quickCheck(task) {
 async function deleteFromList(task) {
   closeSwipe()
   const ok = await confirmDialog({
-    title: '删除这个任务？',
-    copy: '首页和日历里不再出现它。以前的记录还在本机，只是不再计入进度。',
-    ok: '删除',
+    title: '归档这个任务？',
+    copy: '首页和日历里不再出现它。以前的记录和图片还在本机。',
+    ok: '归档',
     danger: true,
   })
   if (!ok) return
@@ -343,6 +379,11 @@ async function deleteFromList(task) {
 async function pinFromList(task) {
   closeSwipe()
   await pinTask(task.id)
+}
+
+async function restoreFromArchive(task) {
+  await restoreTask(task.id)
+  if (!managedTasks().length) archiveOpen.value = false
 }
 
 async function toggleSub(task, subtask) {
@@ -355,7 +396,17 @@ async function toggleSub(task, subtask) {
   <main class="page" @click="onPageClick" @scroll="closeSwipe">
     <header class="head">
       <p class="brand">日课</p>
-      <p class="date">{{ practice.date }}</p>
+      <div class="head-actions">
+        <p class="date">{{ practice.date }}</p>
+        <button
+          v-if="managedTasks().length"
+          type="button"
+          class="archive-btn"
+          @click="archiveOpen = true"
+        >
+          归档箱
+        </button>
+      </div>
     </header>
     <SyncBar />
 
@@ -369,7 +420,7 @@ async function toggleSub(task, subtask) {
       >
         <div class="actions" aria-hidden="true">
           <button type="button" class="act edit" @click="openEdit(task)">修改</button>
-          <button type="button" class="act del" @click="deleteFromList(task)">删除</button>
+          <button type="button" class="act del" @click="deleteFromList(task)">归档</button>
           <button type="button" class="act pin" @click="pinFromList(task)">
             {{ task.pinned ? '取消' : '置顶' }}
           </button>
@@ -443,82 +494,125 @@ async function toggleSub(task, subtask) {
 
     <div v-if="editor" class="modal-mask" @click.self="closeEditor">
       <div class="modal-sheet">
-        <h2 class="modal-title">{{ editor.mode === 'add' ? '新任务' : '改任务' }}</h2>
-        <p v-if="editor.mode === 'add' && form.dueDate !== practice.date" class="modal-copy">
-          安排到 {{ form.dueDate }}
-        </p>
-        <input v-model="form.title" class="field" type="text" maxlength="20" placeholder="名称" />
-        <div class="colors">
-          <button
-            v-for="color in TASK_COLORS"
-            :key="color"
-            type="button"
-            class="swatch"
-            :class="{ on: form.color === color }"
-            :style="{ background: color }"
-            @click="form.color = color"
-          />
-        </div>
-        <div class="time-row">
-          <span>提醒</span>
-          <button type="button" class="time" @click="timeOpen = true">
-            {{ form.reminder || '选择时间' }}
-          </button>
-          <button v-if="form.reminder" type="button" class="off" @click="form.reminder = ''">关</button>
-        </div>
-        <div class="date-row">
-          <label>
-            <span>完成日期</span>
-            <input v-model="form.dueDate" type="date" />
-          </label>
-          <label class="toggle">
-            <input v-model="form.longTerm" type="checkbox" />
-            <span>长期任务</span>
-          </label>
-        </div>
-        <div v-if="editor.mode === 'add'" class="kinds">
-          <button
-            v-for="item in TASK_TEMPLATES"
-            :key="item.id"
-            type="button"
-            :class="{ on: form.template === item.id }"
-            @click="applyTemplate(item)"
-          >
-            {{ item.title }}
-          </button>
-        </div>
-        <div v-if="form.completion === 'counter'" class="component-block">
-          <p>组件</p>
-          <div class="kinds">
+        <template v-if="editorStep === 'template'">
+          <h2 class="modal-title">选择模板</h2>
+          <p class="modal-copy">模板只预设类型和组件，子任务之后自己添加。</p>
+          <div class="template-list">
             <button
-              v-for="item in TASK_COMPONENTS"
+              v-for="item in TASK_TEMPLATES"
               :key="item.id"
               type="button"
-              :class="{ on: hasComponent(item.id) }"
-              @click="toggleComponent(item.id)"
+              class="template-card"
+              @click="chooseTemplate(item)"
             >
-              {{ item.title }}
+              <i :style="{ background: item.color }" />
+              <span>
+                <strong>{{ item.title }}</strong>
+                <em>{{ item.summary }}</em>
+              </span>
             </button>
           </div>
-        </div>
-        <div class="subtask-editor">
-          <div class="subtask-title">
-            <span>子任务</span>
-            <button type="button" @click="addSubtaskField">添加</button>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" type="button" @click="closeEditor">取消</button>
           </div>
-          <div v-if="form.subtasks.length" class="subtask-fields">
-            <label v-for="(subtask, index) in form.subtasks" :key="index" class="subtask-field">
-              <input v-model="subtask.title" type="text" maxlength="28" placeholder="子任务名称" />
-              <button type="button" @click="removeSubtaskField(index)">删</button>
+        </template>
+        <template v-else>
+          <div class="modal-head">
+            <button v-if="editor.mode === 'add'" type="button" class="back-step" @click="backToTemplate">
+              模板
+            </button>
+            <h2 class="modal-title">{{ editor.mode === 'add' ? '新任务' : '改任务' }}</h2>
+            <span />
+          </div>
+          <p v-if="editor.mode === 'add' && form.dueDate !== practice.date" class="modal-copy">
+            安排到 {{ form.dueDate }}
+          </p>
+          <input v-model="form.title" class="field" type="text" maxlength="20" placeholder="名称" />
+          <div class="colors">
+            <button
+              v-for="color in TASK_COLORS"
+              :key="color"
+              type="button"
+              class="swatch"
+              :class="{ on: form.color === color }"
+              :style="{ background: color }"
+              @click="form.color = color"
+            />
+          </div>
+          <div class="time-row">
+            <span>提醒</span>
+            <button type="button" class="time" @click="timeOpen = true">
+              {{ form.reminder || '选择时间' }}
+            </button>
+            <button v-if="form.reminder" type="button" class="off" @click="form.reminder = ''">关</button>
+          </div>
+          <div class="date-row">
+            <label>
+              <span>完成日期</span>
+              <input v-model="form.dueDate" type="date" />
+            </label>
+            <label class="toggle">
+              <input v-model="form.longTerm" type="checkbox" />
+              <span>长期任务</span>
+            </label>
+            <label class="toggle">
+              <input v-model="form.paused" type="checkbox" />
+              <span>暂停任务</span>
             </label>
           </div>
+          <div class="component-block">
+            <p>组件</p>
+            <div class="kinds">
+              <button
+                v-for="item in TASK_COMPONENTS"
+                :key="item.id"
+                type="button"
+                :class="{ on: hasComponent(item.id) }"
+                @click="toggleComponent(item.id)"
+              >
+                {{ item.title }}
+              </button>
+            </div>
+          </div>
+          <div class="subtask-editor">
+            <div class="subtask-title">
+              <span>子任务</span>
+              <button type="button" @click="addSubtaskField">添加</button>
+            </div>
+            <div v-if="form.subtasks.length" class="subtask-fields">
+              <label v-for="(subtask, index) in form.subtasks" :key="index" class="subtask-field">
+                <input v-model="subtask.title" type="text" maxlength="28" placeholder="子任务名称" />
+                <button type="button" @click="removeSubtaskField(index)">删</button>
+              </label>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button v-if="editor.mode === 'edit'" class="btn btn-danger" type="button" @click="deleteCurrent">
+              归档
+            </button>
+            <button class="btn btn-ghost" type="button" @click="closeEditor">取消</button>
+            <button class="btn btn-primary" type="button" @click="saveEditor">保存</button>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div v-if="archiveOpen" class="modal-mask" @click.self="archiveOpen = false">
+      <div class="modal-sheet">
+        <h2 class="modal-title">归档箱</h2>
+        <p class="modal-copy">恢复后会重新按完成日期或长期任务规则显示，过去日期的单次任务可在日历里回看。</p>
+        <div class="archive-list">
+          <article v-for="task in managedTasks()" :key="task.id" class="archive-item">
+            <i :style="{ background: task.color }" />
+            <span>
+              <strong>{{ task.title }}</strong>
+              <em>{{ task.archived ? '已归档' : '已暂停' }}</em>
+            </span>
+            <button type="button" @click="restoreFromArchive(task)">恢复</button>
+          </article>
         </div>
         <div class="modal-actions">
-          <button v-if="editor.mode === 'edit'" class="btn btn-danger" type="button" @click="deleteCurrent">
-            删除
-          </button>
-          <button class="btn btn-ghost" type="button" @click="closeEditor">取消</button>
-          <button class="btn btn-primary" type="button" @click="saveEditor">保存</button>
+          <button class="btn btn-ghost" type="button" @click="archiveOpen = false">关闭</button>
         </div>
       </div>
     </div>
@@ -540,6 +634,7 @@ async function toggleSub(task, subtask) {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: 16px;
 }
 
 .brand {
@@ -553,6 +648,19 @@ async function toggleSub(task, subtask) {
   margin: 0;
   color: var(--muted);
   font-size: var(--fs-sm);
+}
+
+.head-actions {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.archive-btn {
+  min-height: 32px;
+  color: var(--amber);
+  font-size: var(--fs-sm);
+  font-weight: 650;
 }
 
 .links {
@@ -905,6 +1013,102 @@ async function toggleSub(task, subtask) {
 
 .modal-actions .btn {
   flex: 1;
+  min-width: 0;
+}
+
+.modal-head {
+  display: grid;
+  grid-template-columns: 64px 1fr 64px;
+  align-items: center;
+}
+
+.back-step {
+  min-height: 40px;
+  color: var(--amber);
+  font-weight: 650;
+  text-align: left;
+}
+
+.template-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 18px;
+}
+
+.template-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg);
+  text-align: left;
+}
+
+.template-card i {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+
+.template-card strong {
+  display: block;
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+
+.template-card em {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-style: normal;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.archive-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 18px;
+}
+
+.archive-item {
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg);
+}
+
+.archive-item i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.archive-item strong,
+.archive-item em {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.archive-item em {
+  margin-top: 4px;
+  color: var(--muted);
+  font-style: normal;
+  font-size: var(--fs-sm);
+}
+
+.archive-item button {
+  min-height: 40px;
+  padding: 0 12px;
+  color: var(--amber);
+  font-weight: 650;
 }
 
 .fab {

@@ -5,6 +5,7 @@ import Sheet from '../pages/Sheet.vue'
 import Notes from '../pages/Notes.vue'
 import Calendar from '../pages/Calendar.vue'
 import Journal from '../pages/Journal.vue'
+import Gallery from '../pages/Gallery.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -16,6 +17,7 @@ const router = createRouter({
     { path: '/sheet', name: 'sheet', component: Sheet, meta: { keep: true } },
     { path: '/notes', name: 'notes', component: Notes },
     { path: '/calendar', name: 'calendar', component: Calendar, meta: { tab: true, keep: true } },
+    { path: '/gallery/:taskId?', name: 'gallery', component: Gallery, meta: { tab: true } },
     { path: '/journal/:date?', name: 'journal', component: Journal, meta: { tab: true, keep: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
