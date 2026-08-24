@@ -62,8 +62,7 @@ async function remove() {
     </header>
 
     <div v-if="!practice.notes.length" class="empty">
-      <p>还没有乐理笔记。先去存几张要记的图，卡住时就能翻。</p>
-      <button class="btn btn-primary" type="button" @click="pick">去添加</button>
+      <button class="btn btn-primary" type="button" @click="pick">添加笔记</button>
     </div>
 
     <template v-else>

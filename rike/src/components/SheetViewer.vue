@@ -15,7 +15,7 @@ const props = defineProps({
   annotatable: { type: Boolean, default: true },
 })
 
-const emit = defineEmits(['commit-stroke', 'tap', 'pen'])
+const emit = defineEmits(['commit-stroke', 'tap', 'pen', 'gesture'])
 
 const viewport = ref(null)
 const canvasRef = ref(null)
@@ -41,6 +41,7 @@ const pointers = new Map()
 let drawing = false
 let drawId = null
 let tap = null
+let multiTap = null
 let ignoreUntilEmpty = false
 const touchOpts = { passive: false }
 
@@ -133,7 +134,27 @@ function startPinchFrom(list) {
   endPan()
   ignoreUntilEmpty = true
   if (tap) tap.pinched = true
+  if (!multiTap) {
+    multiTap = {
+      count: list.length,
+      at: Date.now(),
+      moved: false,
+      points: list.map((p) => ({ x: p.x, y: p.y })),
+    }
+  } else {
+    multiTap.count = Math.max(multiTap.count, list.length)
+  }
   beginPinch(list[0].x, list[0].y, list[1].x, list[1].y)
+}
+
+function updateMultiTap(list) {
+  if (!multiTap) return
+  multiTap.count = Math.max(multiTap.count, list.length)
+  for (let i = 0; i < Math.min(list.length, multiTap.points.length); i += 1) {
+    if (Math.hypot(list[i].x - multiTap.points[i].x, list[i].y - multiTap.points[i].y) > 16) {
+      multiTap.moved = true
+    }
+  }
 }
 
 function onPointerDown(event) {
@@ -186,6 +207,7 @@ function onPointerMove(event) {
   const fingers = ofType('touch')
   const zoomList = pencilMode() ? fingers : [...pointers.values()]
   if (zoomList.length >= 2) {
+    updateMultiTap(zoomList)
     movePinch(zoomList[0].x, zoomList[0].y, zoomList[1].x, zoomList[1].y)
     return
   }
@@ -226,6 +248,11 @@ function onPointerUp(event) {
   endPan()
 
   if (pointers.size === 0) {
+    const isMultiTap =
+      multiTap &&
+      multiTap.count >= 2 &&
+      !multiTap.moved &&
+      Date.now() - multiTap.at < 360
     const isTap =
       tap &&
       !tap.moved &&
@@ -233,7 +260,13 @@ function onPointerUp(event) {
       !wasDrawing &&
       Date.now() - tap.at < 450
     tap = null
+    const gesture = multiTap?.count
+    multiTap = null
     ignoreUntilEmpty = false
+    if (isMultiTap) {
+      emit('gesture', gesture >= 3 ? 'redo' : 'undo')
+      return
+    }
     if (isTap) emit('tap')
   }
 }

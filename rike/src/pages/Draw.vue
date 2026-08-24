@@ -2,7 +2,15 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PhotoViewer from '../components/PhotoViewer.vue'
-import { addCheckins, checkinsOn, practice, removeCheckin } from '../stores/practice'
+import {
+  addCheckins,
+  checkinsOn,
+  dayComplete,
+  practice,
+  removeCheckin,
+  subtaskDone,
+  toggleSubtask,
+} from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 
 const router = useRouter()
@@ -10,8 +18,19 @@ const fileRef = ref(null)
 const viewerOpen = ref(false)
 const startIndex = ref(0)
 
-const todayPhotos = computed(() => checkinsOn(practice.date))
-const doneToday = computed(() => todayPhotos.value.length > 0)
+const todayPhotos = computed(() => checkinsOn(practice.date, practice.task.id))
+const subtasks = computed(() => practice.task.subtasks || [])
+const doneToday = computed(() => {
+  const rec = practice.todayByTask[practice.task.id]
+  if (subtasks.value.length) return dayComplete(practice.task, rec)
+  return (rec?.count || 0) > 0 || todayPhotos.value.length > 0
+})
+const doneLabel = computed(() => {
+  if (subtasks.value.length) return doneToday.value ? '今日已完成' : ''
+  const rec = practice.todayByTask[practice.task.id]
+  const n = rec?.count || todayPhotos.value.length
+  return n ? `今日已完成 · ${n} 张` : ''
+})
 
 function pick() {
   fileRef.value?.click()
@@ -20,7 +39,7 @@ function pick() {
 async function onFiles(event) {
   const added = await addCheckins(event.target.files, practice.date)
   event.target.value = ''
-  if (added.length) toast('已记下今天的画')
+  if (added.length) toast('已记下')
 }
 
 function openAt(index) {
@@ -45,14 +64,28 @@ async function onDelete(id) {
   <main class="page">
     <header class="head">
       <button type="button" class="back" @click="router.push('/')">返回</button>
-      <h1>画画</h1>
-      <button type="button" class="add" @click="pick">上传</button>
+      <h1>{{ practice.task.title }}</h1>
+      <button v-if="!subtasks.length" type="button" class="add" @click="pick">上传</button>
+      <span v-else />
     </header>
 
-    <p v-if="doneToday" class="ok">今日画画已完成 · {{ todayPhotos.length }} 张</p>
-    <p v-else class="lead">把今天画的拍下来。有一张就算今天画过，日历进度会亮一段蓝色。</p>
+    <p v-if="doneToday" class="ok">{{ doneLabel }}</p>
 
-    <button class="upload" type="button" @click="pick">上传今天的画</button>
+    <section v-if="subtasks.length" class="subtasks">
+      <button
+        v-for="subtask in subtasks"
+        :key="subtask.id"
+        type="button"
+        class="subtask"
+        :class="{ on: subtaskDone(practice.task.id, subtask.id) }"
+        @click="toggleSubtask(practice.task.id, subtask.id)"
+      >
+        <span>{{ subtask.title }}</span>
+        <i />
+      </button>
+    </section>
+
+    <button v-else class="upload" type="button" @click="pick">上传图片打卡</button>
 
     <section v-if="todayPhotos.length" class="grid">
       <button
@@ -66,13 +99,11 @@ async function onDelete(id) {
       </button>
     </section>
 
-    <p class="hint">以前的画在「练习日历」里按天回看。</p>
-
     <PhotoViewer
       :open="viewerOpen"
       :photos="todayPhotos"
       :start-index="startIndex"
-      title="今天的画"
+      title="打卡图片"
       @close="viewerOpen = false"
       @delete="onDelete"
     />
@@ -85,7 +116,7 @@ async function onDelete(id) {
   height: 100%;
   overflow: auto;
   padding: calc(12px + var(--safe-top)) 16px calc(24px + var(--safe-bottom));
-  max-width: 480px;
+  max-width: var(--page-max);
   margin: 0 auto;
 }
 
@@ -108,17 +139,6 @@ async function onDelete(id) {
   font-weight: 650;
 }
 
-.lead,
-.hint {
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.lead {
-  margin: 14px 0 18px;
-}
-
 .ok {
   margin: 14px 0 18px;
   color: var(--ok);
@@ -127,7 +147,8 @@ async function onDelete(id) {
 
 .upload {
   width: 100%;
-  min-height: 56px;
+  margin-top: 16px;
+  min-height: var(--tap-lg);
   border-radius: 16px;
   background: var(--draw);
   color: var(--ink);
@@ -142,6 +163,44 @@ async function onDelete(id) {
   margin-top: 16px;
 }
 
+.subtasks {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.subtask {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: var(--tap-lg);
+  padding: 0 18px;
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  text-align: left;
+  font-size: var(--fs-lg);
+  font-weight: 650;
+}
+
+.subtask i {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 3px solid var(--muted);
+  border-radius: 50%;
+}
+
+.subtask.on {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.subtask.on i {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
 .cell {
   aspect-ratio: 1;
   border-radius: 10px;
@@ -153,10 +212,6 @@ async function onDelete(id) {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.hint {
-  margin-top: 18px;
 }
 
 .hidden {

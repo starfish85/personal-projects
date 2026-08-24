@@ -28,8 +28,7 @@ async function minus() {
   <div class="counter" :class="variant">
     <p v-if="variant === 'hero'" class="task">{{ practice.task.title }}</p>
     <p class="digits">{{ label }}</p>
-    <p v-if="variant === 'hero' && done" class="done">今日练习吉他已完成</p>
-    <p v-else-if="variant === 'hero'" class="hint">练完一遍就点一下</p>
+    <p v-if="variant === 'hero' && done" class="done">今日{{ practice.task.title }}已完成</p>
 
     <button v-if="variant === 'hero'" class="plus" type="button" @click="plus">
       练完一遍
@@ -50,12 +49,12 @@ async function minus() {
   margin: 0 0 8px;
   color: var(--muted);
   letter-spacing: 0.12em;
-  font-size: 13px;
+  font-size: var(--fs-sm);
 }
 
 .hero .digits {
   margin: 0;
-  font-size: 48px;
+  font-size: var(--fs-hero);
   font-weight: 720;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
@@ -64,24 +63,18 @@ async function minus() {
 .hero .done {
   margin: 10px 0 0;
   color: var(--ok);
-  font-size: 16px;
+  font-size: var(--fs-md);
   font-weight: 650;
-}
-
-.hero .hint {
-  margin: 10px 0 0;
-  color: var(--muted);
-  font-size: 14px;
 }
 
 .plus {
   width: 100%;
   margin-top: 28px;
-  min-height: 64px;
+  min-height: var(--tap-lg, 64px);
   border-radius: 18px;
   background: var(--amber);
   color: var(--ink);
-  font-size: 20px;
+  font-size: var(--fs-lg);
   font-weight: 750;
 }
 

@@ -1,9 +1,9 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PracticeCounter from '../components/PracticeCounter.vue'
 import TaskHelpers from '../components/TaskHelpers.vue'
-import { practice, setTarget } from '../stores/practice'
+import { done, practice, setTarget, subtaskDone, taskHasComponent, toggleSubtask } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 import { downloadBackup, exportBackup, importBackup } from '../utils/backup'
 
@@ -11,6 +11,7 @@ const router = useRouter()
 const showTarget = ref(false)
 const draft = ref('10')
 const importRef = ref(null)
+const subtasks = computed(() => practice.task.subtasks || [])
 
 function openTarget() {
   draft.value = String(practice.task.target)
@@ -35,7 +36,7 @@ async function doExport() {
 async function askImport() {
   const ok = await confirmDialog({
     title: '导入备份？',
-    copy: '会覆盖本机现有的遍数、曲谱、标注和笔记。',
+    copy: '会覆盖本机现有的遍数、图片、标注和笔记。',
     ok: '导入',
     danger: true,
   })
@@ -63,7 +64,25 @@ async function onImport(event) {
       <p class="date">{{ practice.date }}</p>
     </header>
 
-    <PracticeCounter variant="hero" @edit-target="openTarget" />
+    <template v-if="subtasks.length">
+      <p v-if="done" class="ok">今日已完成</p>
+      <p v-else class="idle">今日未完成</p>
+      <section class="subtasks">
+        <button
+          v-for="subtask in subtasks"
+          :key="subtask.id"
+          type="button"
+          class="subtask"
+          :class="{ on: subtaskDone(practice.task.id, subtask.id) }"
+          @click="toggleSubtask(practice.task.id, subtask.id)"
+        >
+          <span>{{ subtask.title }}</span>
+          <i />
+        </button>
+      </section>
+    </template>
+
+    <PracticeCounter v-else-if="taskHasComponent('counter')" variant="hero" @edit-target="openTarget" />
 
     <TaskHelpers />
 
@@ -124,31 +143,6 @@ async function onImport(event) {
   font-size: 13px;
 }
 
-.links {
-  display: grid;
-  gap: 10px;
-  margin-top: 36px;
-}
-
-.card {
-  text-align: left;
-  padding: 16px 18px;
-  border-radius: var(--radius);
-  background: var(--bg-elev);
-}
-
-.card strong {
-  display: block;
-  font-size: 16px;
-}
-
-.card span {
-  display: block;
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
 .foot {
   margin-top: 28px;
   display: flex;
@@ -160,9 +154,58 @@ async function onImport(event) {
   color: var(--amber);
 }
 
-.foot p {
-  flex-basis: 100%;
-  margin: 0;
+.ok,
+.idle {
+  margin: 14px 0 18px;
+  text-align: center;
+  font-size: var(--fs-xl);
+  font-weight: 650;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.idle {
+  color: var(--muted);
+}
+
+.subtasks {
+  display: grid;
+  gap: 12px;
+  margin: 22px 0;
+}
+
+.subtask {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: var(--tap-lg);
+  padding: 0 18px;
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  text-align: left;
+  font-size: var(--fs-lg);
+  font-weight: 650;
+}
+
+.subtask i {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 3px solid var(--muted);
+  border-radius: 50%;
+}
+
+.subtask.on {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.subtask.on i {
+  border-color: var(--ok);
+  background: var(--ok);
 }
 
 .hidden {

@@ -3,40 +3,83 @@ import { computed, onActivated, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PhotoViewer from '../components/PhotoViewer.vue'
 import {
-  DRAW_ID,
-  TASK_ID,
-  TASK_META,
   checkinsOn,
   dayComplete,
+  hasJournal,
+  journalPhotosOn,
   listDays,
   loadCheckins,
+  loadJournals,
   practice,
   removeCheckin,
+  removeJournalPhoto,
+  subtaskDone,
+  tasksOnDate,
+  toggleCheckOnDate,
+  toggleSubtask,
 } from '../stores/practice'
 import { confirmDialog } from '../stores/ui'
 import { formatClock, formatDayTitle, localDateKey, monthGrid } from '../utils/date'
+
+defineOptions({ name: 'Calendar' })
 
 const router = useRouter()
 const today = localDateKey()
 const cursor = ref(new Date())
 const selected = ref(today)
-const guitarDays = ref({})
-const drawDays = ref({})
+const daysByTask = ref({})
 const viewerOpen = ref(false)
 const startIndex = ref(0)
+const viewerPhotos = ref([])
 
 const year = computed(() => cursor.value.getFullYear())
 const month = computed(() => cursor.value.getMonth())
 const title = computed(() => `${year.value}年${month.value + 1}月`)
 const cells = computed(() => monthGrid(year.value, month.value))
+const tasks = computed(() => practice.tasks)
+const selectedTasks = computed(() => tasksOnDate(selected.value))
+const isFuture = computed(() => selected.value > today)
+const isToday = computed(() => selected.value === today)
+const canEditJournal = computed(() => selected.value <= today)
+const canCompleteTasks = computed(() => selected.value === today)
+const addLabel = computed(() => (isFuture.value ? '安排任务' : '添加任务'))
 
-const guitar = computed(() => guitarDays.value[selected.value] || null)
-const drawing = computed(() => drawDays.value[selected.value] || null)
-const guitarDone = computed(() => dayComplete(TASK_ID, guitar.value))
-const drawDone = computed(() => dayComplete(DRAW_ID, drawing.value))
-const photos = computed(() => checkinsOn(selected.value))
-const allDone = computed(() => guitarDone.value && drawDone.value)
-const anyDone = computed(() => guitarDone.value || drawDone.value)
+function record(taskId, date) {
+  return daysByTask.value[taskId]?.[date] || null
+}
+
+function status(dateKey, task) {
+  return dayComplete(task, record(task.id, dateKey))
+}
+
+function subDone(taskId, subtaskId) {
+  return Boolean(record(taskId, selected.value)?.subtasks?.[subtaskId])
+}
+
+function statusLine(task) {
+  if (isFuture.value) return '已安排'
+  if (task.subtasks?.length) {
+    const rec = record(task.id, selected.value)
+    const doneCount = task.subtasks.filter((item) => rec?.subtasks?.[item.id]).length
+    if (doneCount === task.subtasks.length) return `已完成 · ${doneCount}/${task.subtasks.length}`
+    if (doneCount > 0) return `${doneCount}/${task.subtasks.length}`
+    return '未完成'
+  }
+  if (status(selected.value, task)) return task.completion === 'photo-log' ? '已打卡' : '已完成'
+  return '未完成'
+}
+
+function allDoneOn(dateKey) {
+  const rows = tasksOnDate(dateKey)
+  if (!rows.length) return false
+  return rows.every((task) => status(dateKey, task))
+}
+
+const selectedAllDone = computed(() => allDoneOn(selected.value))
+
+function photosFor(taskId) {
+  return checkinsOn(selected.value, taskId)
+}
 
 function mapDays(rows) {
   const map = {}
@@ -44,10 +87,20 @@ function mapDays(rows) {
   return map
 }
 
+const journalText = computed(() => practice.journalTexts[selected.value] || '')
+const journalPhotos = computed(() => journalPhotosOn(selected.value))
+const journalExists = computed(() => hasJournal(selected.value))
+
 async function refresh() {
-  const [g, d] = await Promise.all([listDays(TASK_ID), listDays(DRAW_ID), loadCheckins()])
-  guitarDays.value = mapDays(g)
-  drawDays.value = mapDays(d)
+  await loadCheckins()
+  await loadJournals()
+  const next = {}
+  await Promise.all(
+    practice.tasks.map(async (task) => {
+      next[task.id] = mapDays(await listDays(task.id))
+    }),
+  )
+  daysByTask.value = next
 }
 
 function shiftMonth(delta) {
@@ -58,27 +111,55 @@ function pick(dateKey) {
   if (dateKey) selected.value = dateKey
 }
 
-function status(dateKey, taskId) {
-  const record = taskId === TASK_ID ? guitarDays.value[dateKey] : drawDays.value[dateKey]
-  return dayComplete(taskId, record)
+function addTaskForSelected() {
+  router.push({ path: '/', query: { add: '1', date: selected.value } })
 }
 
-function openPhoto(index) {
+const viewerTaskId = ref(null)
+const viewerKind = ref('checkin')
+
+function openPhoto(taskId, index) {
+  viewerKind.value = 'checkin'
+  viewerTaskId.value = taskId
+  viewerPhotos.value = photosFor(taskId)
+  startIndex.value = index
+  viewerOpen.value = true
+}
+
+function openJournalPhoto(index) {
+  viewerKind.value = 'journal'
+  viewerTaskId.value = null
+  viewerPhotos.value = journalPhotos.value
   startIndex.value = index
   viewerOpen.value = true
 }
 
 async function onDelete(id) {
   const ok = await confirmDialog({
-    title: '删除这张画？',
-    copy: '这一天的画画进度会少一张；若删光，蓝色那一段会灭掉。',
+    title: '删除这张图？',
+    copy: '删光之后这一天这项任务会变成未完成。',
     ok: '删除',
     danger: true,
   })
   if (!ok) return
-  await removeCheckin(id)
+  if (viewerKind.value === 'journal') await removeJournalPhoto(id)
+  else await removeCheckin(id)
   await refresh()
-  if (!photos.value.length) viewerOpen.value = false
+  viewerPhotos.value =
+    viewerKind.value === 'journal' ? journalPhotos.value : photosFor(viewerTaskId.value)
+  if (!viewerPhotos.value.length) viewerOpen.value = false
+}
+
+async function toggleSubOnDate(task, subtask) {
+  if (!canCompleteTasks.value) return
+  await toggleSubtask(task.id, subtask.id, selected.value)
+  await refresh()
+}
+
+async function toggleCheckForSelected(task) {
+  if (!canCompleteTasks.value) return
+  await toggleCheckOnDate(task.id, selected.value)
+  await refresh()
 }
 
 onMounted(refresh)
@@ -88,8 +169,8 @@ onActivated(refresh)
 <template>
   <main class="page">
     <header class="head">
-      <button type="button" class="back" @click="router.push('/')">返回</button>
-      <h1>练习日历</h1>
+      <span />
+      <h1>日历</h1>
       <span />
     </header>
 
@@ -113,71 +194,128 @@ onActivated(refresh)
           @click="pick(cell)"
         >
           <span v-if="cell">{{ Number(cell.slice(8)) }}</span>
-          <div v-if="cell" class="bar" :class="{ full: status(cell, TASK_ID) && status(cell, DRAW_ID) }">
+          <div v-if="cell && tasksOnDate(cell).length" class="bar" :class="{ full: allDoneOn(cell) }">
             <i
-              v-for="task in TASK_META"
+              v-for="task in tasksOnDate(cell)"
               :key="task.id"
               class="seg"
-              :class="[task.color, { on: status(cell, task.id) }]"
+              :style="{ background: status(cell, task) ? task.color : 'transparent' }"
             />
           </div>
         </button>
       </div>
-      <p class="legend">
-        <span><i class="guitar" />吉他</span>
-        <span><i class="draw" />画画</span>
-        <span>满条 = 当天两项都完成</span>
-      </p>
     </section>
 
     <section class="detail">
       <h2>{{ formatDayTitle(selected) }}</h2>
-      <p v-if="selected > today" class="muted">这一天还没到。</p>
-      <template v-else>
-        <p v-if="allDone" class="ok">这一天的日课都完成了。</p>
-        <p v-else-if="anyDone" class="muted">完成了一部分，进度条还没满。</p>
-        <p v-else class="muted">这天还没有完成任何一项。</p>
-
-        <div class="block">
-          <p class="label"><i class="guitar" />练习吉他</p>
-          <template v-if="guitar && guitar.count > 0">
-            <p class="digits">
-              {{ guitar.count }}
-              <span>/ {{ guitar.target ?? practice.task.target }} 遍</span>
-            </p>
-            <p v-if="guitarDone" class="ok">已完成</p>
-            <p v-else class="muted">练了，还没到目标。</p>
-            <p v-if="guitar.completedAt" class="muted">完成于 {{ formatClock(guitar.completedAt) }}</p>
-          </template>
-          <p v-else class="muted">这天没有吉他练习。</p>
+      <template>
+        <div class="day-actions">
+          <button type="button" class="open" @click="addTaskForSelected">{{ addLabel }}</button>
+          <button v-if="canEditJournal" type="button" class="open" @click="router.push(`/journal/${selected}`)">
+            {{ journalExists ? '打开日记' : '写日记' }}
+          </button>
         </div>
-
-        <div class="block">
-          <p class="label"><i class="draw" />画画</p>
-          <template v-if="photos.length">
-            <p class="ok">已打卡 · {{ photos.length }} 张</p>
-            <div class="thumbs">
+        <p v-if="isFuture" class="muted">未来日期只做计划，明天到来后再执行。</p>
+        <p v-else-if="!isToday" class="muted">过去日期用于回看和补写日记，暂不补打卡。</p>
+        <p v-if="selectedAllDone && selectedTasks.length" class="ok">已完成</p>
+        <p v-if="!selectedTasks.length" class="muted">这天还没有安排任务</p>
+        <div v-for="task in selectedTasks" :key="task.id" class="block">
+          <div class="task-head">
+            <p class="label">
+              <i :style="{ background: task.color }" />
+              {{ task.title }}
+            </p>
+            <span :class="status(selected, task) ? 'mini-ok' : 'mini-muted'">{{ statusLine(task) }}</span>
+          </div>
+          <template v-if="task.subtasks?.length">
+            <div class="subtasks">
               <button
-                v-for="(item, i) in photos"
-                :key="item.id"
+                v-for="subtask in task.subtasks"
+                :key="subtask.id"
                 type="button"
-                class="thumb"
-                @click="openPhoto(i)"
+                class="subtask"
+                :class="{ on: subDone(task.id, subtask.id) }"
+                :disabled="!canCompleteTasks"
+                @click="toggleSubOnDate(task, subtask)"
               >
-                <img :src="item.thumbUrl" alt="" />
+                <span>{{ subtask.title }}</span>
+                <i />
               </button>
             </div>
           </template>
-          <p v-else class="muted">这天没有画画打卡。</p>
+          <template v-else-if="task.completion === 'photo-log'">
+            <p v-if="isFuture && !record(task.id, selected)?.count" class="muted">已安排到这一天</p>
+            <template v-if="record(task.id, selected)?.count">
+              <p class="ok">已打卡 · {{ record(task.id, selected).count }} 张</p>
+              <div class="thumbs">
+                <button
+                  v-for="(item, i) in photosFor(task.id)"
+                  :key="item.id"
+                  type="button"
+                  class="thumb"
+                  @click="openPhoto(task.id, i)"
+                >
+                  <img :src="item.thumbUrl" alt="" />
+                </button>
+              </div>
+            </template>
+            <p v-else-if="!isFuture" class="muted">未完成</p>
+          </template>
+          <template v-else-if="task.completion === 'counter'">
+            <p v-if="isFuture && !record(task.id, selected)?.count" class="muted">已安排到这一天</p>
+            <template v-if="record(task.id, selected)?.count">
+              <p class="digits">
+                {{ record(task.id, selected).count }}
+                <span>/ {{ record(task.id, selected).target ?? task.target }} 遍</span>
+              </p>
+              <p v-if="status(selected, task)" class="ok">已完成</p>
+              <p v-else class="muted">未到目标</p>
+              <p v-if="record(task.id, selected).completedAt" class="muted">
+                {{ formatClock(record(task.id, selected).completedAt) }}
+              </p>
+            </template>
+            <p v-else-if="!isFuture" class="muted">未完成</p>
+          </template>
+          <template v-else>
+            <button
+              v-if="task.completion === 'check'"
+              class="day-check"
+              type="button"
+              :class="{ on: status(selected, task) }"
+              :disabled="!canCompleteTasks"
+              @click="toggleCheckForSelected(task)"
+            >
+              <span>{{ canCompleteTasks ? (status(selected, task) ? '取消完成' : '完成今天') : statusLine(task) }}</span>
+              <i />
+            </button>
+            <p v-else class="muted">{{ statusLine(task) }}</p>
+          </template>
+        </div>
+
+        <div v-if="canEditJournal" class="block">
+          <p class="label">日记</p>
+          <p v-if="journalText" class="entry">{{ journalText }}</p>
+          <div v-if="journalPhotos.length" class="thumbs">
+            <button
+              v-for="(item, i) in journalPhotos"
+              :key="item.id"
+              type="button"
+              class="thumb"
+              @click="openJournalPhoto(i)"
+            >
+              <img :src="item.thumbUrl" alt="" />
+            </button>
+          </div>
+          <p v-else-if="!journalExists" class="muted">未写</p>
         </div>
       </template>
     </section>
 
     <PhotoViewer
       :open="viewerOpen"
-      :photos="photos"
+      :photos="viewerPhotos"
       :start-index="startIndex"
-      title="那天的画"
+      title="那天的图"
       @close="viewerOpen = false"
       @delete="onDelete"
     />
@@ -188,8 +326,8 @@ onActivated(refresh)
 .page {
   height: 100%;
   overflow: auto;
-  padding: calc(12px + var(--safe-top)) 16px calc(24px + var(--safe-bottom));
-  max-width: 480px;
+  padding: calc(12px + var(--safe-top)) 16px calc(var(--tab-h) + 16px);
+  max-width: var(--page-max);
   margin: 0 auto;
 }
 
@@ -202,7 +340,7 @@ onActivated(refresh)
 .head h1 {
   margin: 0;
   text-align: center;
-  font-size: 18px;
+  font-size: var(--fs-lg);
 }
 
 .back {
@@ -246,7 +384,7 @@ onActivated(refresh)
 
 .cell {
   position: relative;
-  height: 48px;
+  height: var(--cell);
   border-radius: 10px;
   color: var(--text);
 }
@@ -283,49 +421,6 @@ onActivated(refresh)
 
 .seg {
   flex: 1;
-  background: transparent;
-}
-
-.seg.guitar.on {
-  background: var(--amber);
-}
-
-.seg.draw.on {
-  background: var(--draw);
-}
-
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 12px 0 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.legend span,
-.label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.legend i,
-.label i {
-  width: 10px;
-  height: 6px;
-  border-radius: 99px;
-  display: inline-block;
-}
-
-.legend i.guitar,
-.label i.guitar {
-  background: var(--amber);
-}
-
-.legend i.draw,
-.label i.draw {
-  background: var(--draw);
 }
 
 .detail {
@@ -337,7 +432,14 @@ onActivated(refresh)
 
 .detail h2 {
   margin: 0 0 10px;
-  font-size: 16px;
+  font-size: var(--fs-md);
+}
+
+.day-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 6px;
 }
 
 .block {
@@ -346,9 +448,41 @@ onActivated(refresh)
   border-top: 1px solid var(--line);
 }
 
+.task-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 8px;
   font-weight: 650;
+}
+
+.label i {
+  width: 10px;
+  height: 6px;
+  border-radius: 99px;
+  display: inline-block;
+}
+
+.mini-ok,
+.mini-muted {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.mini-ok {
+  color: var(--ok);
+}
+
+.mini-muted {
+  color: var(--muted);
 }
 
 .digits {
@@ -397,5 +531,89 @@ onActivated(refresh)
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.entry {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: 15px;
+}
+
+.open {
+  margin-top: 12px;
+  color: var(--amber);
+  font-weight: 650;
+  min-height: 40px;
+}
+
+.day-actions .open {
+  margin-top: 0;
+}
+
+.subtasks {
+  display: grid;
+  gap: 8px;
+}
+
+.subtask {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  color: var(--text);
+  text-align: left;
+}
+
+.subtask i {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+}
+
+.subtask.on {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.subtask.on i {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.day-check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  color: var(--text);
+  text-align: left;
+}
+
+.day-check:disabled {
+  color: var(--muted);
+}
+
+.day-check i {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+}
+
+.day-check.on {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.day-check.on i {
+  border-color: var(--ok);
+  background: var(--ok);
 }
 </style>

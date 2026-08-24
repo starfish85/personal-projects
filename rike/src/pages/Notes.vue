@@ -27,12 +27,10 @@ async function onFiles(event) {
 <template>
   <main class="page">
     <header class="head">
-      <button type="button" class="back" @click="router.push('/guitar')">返回</button>
+      <button type="button" class="back" @click="router.push(`/task/${practice.task.id}`)">返回</button>
       <h1>乐理笔记</h1>
       <button type="button" class="add" @click="pick">添加</button>
     </header>
-
-    <p class="lead">把要背的乐理拍下来。练谱时随时能翻，不用离开曲谱。</p>
 
     <section v-if="!practice.notes.length" class="empty">
       <button class="btn btn-primary" type="button" @click="pick">上传笔记图片</button>
@@ -60,7 +58,7 @@ async function onFiles(event) {
   height: 100%;
   overflow: auto;
   padding: calc(12px + var(--safe-top)) 16px calc(20px + var(--safe-bottom));
-  max-width: 480px;
+  max-width: var(--page-max);
   margin: 0 auto;
 }
 
@@ -83,14 +81,8 @@ async function onFiles(event) {
   font-weight: 650;
 }
 
-.lead {
-  margin: 12px 0 18px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
 .empty {
+  margin-top: 24px;
   padding: 48px 0;
   display: flex;
   justify-content: center;

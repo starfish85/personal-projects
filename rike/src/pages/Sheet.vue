@@ -21,6 +21,7 @@ const router = useRouter()
 const viewer = ref(null)
 const fileRef = ref(null)
 const strokes = ref([])
+const redoStack = ref([])
 const toolsOpen = ref(false)
 
 const page = computed(() => practice.sheets[studio.sheetIndex] || null)
@@ -35,6 +36,7 @@ async function loadStrokes() {
     return
   }
   strokes.value = await db.strokesGet(page.value.id)
+  redoStack.value = []
 }
 
 watch(
@@ -58,13 +60,32 @@ async function onFiles(event) {
 async function commitStroke(stroke) {
   if (!page.value) return
   strokes.value = [...strokes.value, stroke]
+  redoStack.value = []
   await db.strokesPut(page.value.id, strokes.value)
 }
 
 async function undo() {
   if (!page.value || !strokes.value.length) return
+  const last = strokes.value[strokes.value.length - 1]
+  redoStack.value = [...redoStack.value, last]
   strokes.value = strokes.value.slice(0, -1)
   await db.strokesPut(page.value.id, strokes.value)
+}
+
+async function redo() {
+  if (!page.value || !redoStack.value.length) return
+  const next = redoStack.value[redoStack.value.length - 1]
+  redoStack.value = redoStack.value.slice(0, -1)
+  strokes.value = [...strokes.value, next]
+  await db.strokesPut(page.value.id, strokes.value)
+}
+
+function onGesture(action) {
+  if (action === 'redo') {
+    redo()
+    return
+  }
+  undo()
 }
 
 async function clearPage() {
@@ -77,6 +98,7 @@ async function clearPage() {
   })
   if (!ok) return
   strokes.value = []
+  redoStack.value = []
   await db.strokesPut(page.value.id, [])
 }
 
@@ -129,7 +151,7 @@ function zoom(factor) {
 function goHome() {
   hideTools()
   studio.notesOpen = false
-  router.push('/guitar')
+  router.push(`/task/${practice.task.id}`)
 }
 
 onActivated(() => {
@@ -155,7 +177,6 @@ onBeforeRouteLeave(() => {
     </header>
 
     <section v-if="!practice.sheets.length" class="empty">
-      <p>还没有曲谱。拍一张谱或从相册选，练习时它会铺满屏幕。</p>
       <button class="btn btn-primary" type="button" @click="pick">上传曲谱</button>
     </section>
 
@@ -174,6 +195,7 @@ onBeforeRouteLeave(() => {
       @commit-stroke="commitStroke"
       @tap="onSheetTap"
       @pen="onPen"
+      @gesture="onGesture"
     />
 
     <footer v-if="practice.sheets.length && toolsOpen" class="hud bottom">
@@ -209,6 +231,7 @@ onBeforeRouteLeave(() => {
           {{ item.label }}
         </button>
         <button type="button" class="chip" @click="undo">撤销</button>
+        <button type="button" class="chip" @click="redo">恢复</button>
         <button type="button" class="chip" @click="clearPage">清空</button>
         <button type="button" class="chip" @click="pick">加页</button>
       </div>
@@ -335,6 +358,15 @@ onBeforeRouteLeave(() => {
   background: rgba(255, 255, 255, 0.08);
   color: var(--paper);
   font-size: 13px;
+}
+
+@media (min-width: 700px) {
+  .modes button,
+  .chip {
+    min-height: 44px;
+    font-size: 16px;
+    padding: 0 16px;
+  }
 }
 
 .modes button.on,

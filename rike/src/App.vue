@@ -1,12 +1,16 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import TabBar from './components/TabBar.vue'
 import { ensureToday, practice } from './stores/practice'
 import { ui } from './stores/ui'
+import { startReminders } from './utils/remind'
 
 const route = useRoute()
+const showTab = computed(() => route.meta.tab === true)
 
 onMounted(() => {
+  startReminders()
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') ensureToday()
   })
@@ -16,10 +20,11 @@ onMounted(() => {
 <template>
   <div class="app" :data-page="route.name">
     <router-view v-slot="{ Component }">
-      <keep-alive include="Sheet">
+      <keep-alive include="Home,Journal,Calendar,Sheet">
         <component :is="Component" />
       </keep-alive>
     </router-view>
+    <TabBar v-if="showTab" />
 
     <div v-if="ui.toast" class="toast" role="status">{{ ui.toast }}</div>
 

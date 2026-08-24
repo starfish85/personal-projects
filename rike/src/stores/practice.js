@@ -7,15 +7,90 @@ import { toast } from './ui'
 export const TASK_ID = 'guitar'
 export const DRAW_ID = 'drawing'
 
+export const TASK_COMPONENTS = [
+  { id: 'counter', title: '计数器' },
+  { id: 'pomodoro', title: '番茄钟' },
+  { id: 'images', title: '插入图片' },
+  { id: 'annotation', title: '批注' },
+  { id: 'sheet', title: '曲谱' },
+  { id: 'notes', title: '笔记' },
+]
+
+export const DEFAULT_RICH_COMPONENTS = ['counter', 'pomodoro', 'images', 'annotation', 'sheet', 'notes']
+
+export const TASK_TEMPLATES = [
+  {
+    id: 'instrument',
+    title: '乐器练习',
+    completion: 'counter',
+    sheet: true,
+    notes: true,
+    components: ['counter', 'pomodoro', 'sheet', 'annotation', 'notes'],
+  },
+  {
+    id: 'creative',
+    title: '画画 / 创作',
+    completion: 'photo-log',
+    sheet: false,
+    notes: false,
+    components: ['images', 'annotation', 'notes'],
+  },
+  {
+    id: 'study',
+    title: '学习 / 备考',
+    completion: 'counter',
+    sheet: false,
+    notes: true,
+    components: ['pomodoro', 'notes'],
+  },
+  {
+    id: 'fitness',
+    title: '健身 / 康复',
+    completion: 'counter',
+    sheet: false,
+    notes: false,
+    components: ['counter', 'pomodoro', 'images', 'notes'],
+  },
+  {
+    id: 'habit',
+    title: '生活习惯',
+    completion: 'check',
+    sheet: false,
+    notes: false,
+    components: ['check', 'notes'],
+  },
+  { id: 'custom', title: '自定义', completion: 'check', sheet: false, notes: false, components: ['check'] },
+]
+
+export const TASK_COLORS = [
+  '#e2a23a',
+  '#7da9c7',
+  '#8fbf88',
+  '#d46a4c',
+  '#b08dcf',
+  '#e08a5a',
+  '#5e9e8e',
+  '#d4b85c',
+]
+
 export const practice = reactive({
   ready: false,
-  task: { id: TASK_ID, title: '练习吉他', target: 10 },
+  tasks: [],
+  task: { id: TASK_ID, title: '练习吉他', target: 10, color: '#e2a23a', completion: 'counter' },
   date: '',
   count: 0,
   completedAt: null,
+  todayByTask: {},
   sheets: [],
   notes: [],
+  helperImages: [],
   checkins: [],
+  journals: [],
+  journalTexts: {},
+  journalUpdatedAt: {},
+  taskNotes: {},
+  taskNotesUpdatedAt: {},
+  tasksUpdatedAt: '',
 })
 
 function readInk() {
@@ -44,9 +119,12 @@ export function setInk(ink) {
   }
 }
 
-export const done = computed(
-  () => practice.count >= practice.task.target && practice.task.target > 0,
-)
+export const done = computed(() => dayComplete(practice.task, {
+  count: practice.count,
+  target: practice.task.target,
+  completedAt: practice.completedAt,
+  subtasks: practice.todayByTask[practice.task.id]?.subtasks || {},
+}))
 
 const urls = new Map()
 
@@ -95,32 +173,349 @@ function syncCompleteFlag() {
   }
 }
 
+let cloudHook = () => {}
+
+export function onLocalChange(fn) {
+  cloudHook = fn
+}
+
+function notifyCloud() {
+  try {
+    cloudHook()
+  } catch {
+    /* ignore */
+  }
+}
+
 async function saveDay() {
   const key = `day.${practice.task.id}.${practice.date}`
-  if (practice.count <= 0) {
-    await db.kvDelete(key)
-    return
-  }
   await db.kvSet(key, {
     count: practice.count,
-    target: practice.task.target,
+    target: practice.task.target || null,
     completedAt: practice.completedAt,
     updatedAt: new Date().toISOString(),
   })
+  await refreshTodayMap()
+  notifyCloud()
 }
 
-export function dayComplete(taskId, record) {
-  if (!record || !record.count) return false
-  if (taskId === DRAW_ID) return record.count > 0
+export function dayComplete(task, record) {
+  if (!task) return false
+  const subtasks = Array.isArray(task.subtasks) ? task.subtasks : []
+  if (subtasks.length) {
+    const doneMap = record?.subtasks || {}
+    return subtasks.every((item) => doneMap[item.id])
+  }
+  if (!record) return false
+  if (task.completion === 'photo-log') return record.count > 0
+  if (task.completion === 'check') return Boolean(record.completedAt) || record.count > 0
   if (record.completedAt) return true
-  if (record.target && record.count >= record.target) return true
-  return false
+  const target = record.target || task.target || 0
+  return target > 0 && record.count >= target
 }
 
-export const TASK_META = [
-  { id: TASK_ID, title: '练习吉他', color: 'guitar' },
-  { id: DRAW_ID, title: '画画', color: 'draw' },
-]
+export function taskTodayLine(task) {
+  const rec = practice.todayByTask[task.id]
+  const subtasks = Array.isArray(task.subtasks) ? task.subtasks : []
+  if (subtasks.length) {
+    const doneCount = subtasks.filter((item) => rec?.subtasks?.[item.id]).length
+    if (doneCount === subtasks.length) return `今日已完成 · ${doneCount}/${subtasks.length}`
+    if (doneCount > 0) return `今日 ${doneCount}/${subtasks.length}`
+    return '今日未完成'
+  }
+  if (task.completion === 'counter') {
+    const count = rec?.count || 0
+    const target = task.target || 10
+    if (count >= target) return `今日已完成 · ${count}/${target}`
+    if (count > 0) return `今日 ${count}/${target}`
+    return '今日未完成'
+  }
+  if (task.completion === 'photo-log') {
+    const n = rec?.count || 0
+    return n ? `今日已打卡 · ${n} 张` : '今日未打卡'
+  }
+  return rec?.completedAt || rec?.count ? '今日已完成' : '今日未完成'
+}
+
+export function taskOnDate(task, date = localDateKey()) {
+  if (!task) return false
+  if (task.archived) return false
+  if (task.longTerm) return true
+  return (task.dueDate || localDateKey()) === date
+}
+
+export function tasksOnDate(date = localDateKey()) {
+  return practice.tasks.filter((task) => taskOnDate(task, date))
+}
+
+async function saveTasks() {
+  practice.tasksUpdatedAt = new Date().toISOString()
+  await db.kvSet('tasks', practice.tasks.map((item) => ({ ...item })))
+  await db.kvSet('tasksUpdatedAt', practice.tasksUpdatedAt)
+  notifyCloud()
+}
+
+export function normalizeTask(task) {
+  const sheet = typeof task.sheet === 'boolean' ? task.sheet : task.completion === 'counter'
+  const notes = typeof task.notes === 'boolean' ? task.notes : task.completion === 'counter'
+  let components = Array.isArray(task.components) ? task.components.filter(Boolean) : null
+  if (task.completion === 'counter' && !components) {
+    components = ['counter']
+    if (sheet) components.push('sheet')
+    if (notes) components.push('notes')
+  }
+  const componentSet = new Set(components || [])
+  return {
+    ...task,
+    sheet: task.completion === 'counter' ? componentSet.has('sheet') : false,
+    notes: task.completion === 'counter' ? componentSet.has('notes') : false,
+    components: [...componentSet],
+    dueDate: task.dueDate || localDateKey(),
+    longTerm: 'longTerm' in task ? Boolean(task.longTerm) : !task.dueDate,
+    archived: Boolean(task.archived),
+    subtasks: Array.isArray(task.subtasks)
+      ? task.subtasks
+          .map((item) => ({
+            id: item.id || uid('s'),
+            title: String(item.title || '').trim(),
+          }))
+          .filter((item) => item.title)
+      : [],
+    pinned: Boolean(task.pinned),
+    pinnedAt: Number(task.pinnedAt) || 0,
+    order: Number.isFinite(task.order) ? task.order : 0,
+  }
+}
+
+function sortTasksInPlace() {
+  practice.tasks.sort((a, b) => {
+    const ap = a.pinned ? 1 : 0
+    const bp = b.pinned ? 1 : 0
+    if (ap !== bp) return bp - ap
+    if (ap && (a.pinnedAt || 0) !== (b.pinnedAt || 0)) return (b.pinnedAt || 0) - (a.pinnedAt || 0)
+    return (a.order ?? 0) - (b.order ?? 0)
+  })
+}
+
+function defaultTasks(guitar, drawing) {
+  return [
+    {
+      id: TASK_ID,
+      title: guitar?.title || '练习吉他',
+      color: '#e2a23a',
+      completion: 'counter',
+      target: guitar?.target || 10,
+      sheet: true,
+      notes: true,
+      components: DEFAULT_RICH_COMPONENTS,
+      order: 0,
+    },
+    {
+      id: DRAW_ID,
+      title: drawing?.title || '画画',
+      color: '#7da9c7',
+      completion: 'photo-log',
+      sheet: false,
+      notes: false,
+      dueDate: localDateKey(),
+      longTerm: true,
+      order: 1,
+    },
+  ]
+}
+
+async function loadTasks() {
+  let tasks = await db.kvGet('tasks')
+  if (!Array.isArray(tasks)) {
+    const guitar = await db.kvGet(`task.${TASK_ID}`)
+    const drawing = await db.kvGet(`task.${DRAW_ID}`)
+    tasks = guitar || drawing ? defaultTasks(guitar, drawing) : []
+    await db.kvSet('tasks', tasks)
+  }
+  const normalized = tasks.map(normalizeTask)
+  practice.tasks = normalized
+  sortTasksInPlace()
+  practice.task = practice.tasks.find((item) => item.id === practice.task?.id) || practice.tasks[0] || practice.task
+  practice.tasksUpdatedAt = (await db.kvGet('tasksUpdatedAt')) || ''
+  if (JSON.stringify(normalized) !== JSON.stringify(tasks)) {
+    await db.kvSet('tasks', normalized)
+  }
+}
+
+export async function openTask(id) {
+  const task = practice.tasks.find((item) => item.id === id)
+  if (!task) return false
+  practice.task = task
+  await loadToday()
+  await loadAssets()
+  return true
+}
+
+export async function addTask({
+  title,
+  color,
+  completion,
+  target,
+  reminder,
+  sheet,
+  notes,
+  components,
+  subtasks,
+  dueDate,
+  longTerm,
+  template,
+}) {
+  const name = String(title || '').trim()
+  if (!name) {
+    toast('先写任务名称')
+    return null
+  }
+  const used = new Set(practice.tasks.map((item) => item.color))
+  const nextColor = TASK_COLORS.find((c) => !used.has(c)) || color || TASK_COLORS[0]
+  const task = {
+    id: uid('t'),
+    title: name,
+    template: template || 'custom',
+    color: color || nextColor,
+    completion: completion || 'check',
+    target: completion === 'counter' ? target || 10 : undefined,
+    reminder: reminder || '',
+    dueDate: dueDate || localDateKey(),
+    longTerm: Boolean(longTerm),
+    sheet: Boolean(sheet),
+    notes: Boolean(notes),
+    components: [...new Set(components || [])],
+    subtasks: Array.isArray(subtasks)
+      ? subtasks
+          .map((item) => ({
+            id: item.id || uid('s'),
+            title: String(item.title || '').trim(),
+          }))
+          .filter((item) => item.title)
+      : [],
+    pinned: false,
+    pinnedAt: 0,
+    order: practice.tasks.length,
+  }
+  practice.tasks.push(task)
+  await saveTasks()
+  await refreshTodayMap()
+  return task
+}
+
+export async function updateTask(id, patch) {
+  const task = practice.tasks.find((item) => item.id === id)
+  if (!task) return false
+  if (patch.title != null) {
+    const name = String(patch.title).trim()
+    if (!name) {
+      toast('名称不能为空')
+      return false
+    }
+    task.title = name
+  }
+  if (patch.color) task.color = patch.color
+  if ('template' in patch) task.template = patch.template || 'custom'
+  if ('reminder' in patch) task.reminder = patch.reminder || ''
+  if ('sheet' in patch) task.sheet = Boolean(patch.sheet)
+  if ('notes' in patch) task.notes = Boolean(patch.notes)
+  if ('components' in patch) {
+    task.components = [...new Set((patch.components || []).filter(Boolean))]
+    if (task.completion === 'counter') {
+      task.sheet = task.components.includes('sheet')
+      task.notes = task.components.includes('notes')
+    }
+  }
+  if ('dueDate' in patch) task.dueDate = patch.dueDate || localDateKey()
+  if ('longTerm' in patch) task.longTerm = Boolean(patch.longTerm)
+  if ('subtasks' in patch) {
+    task.subtasks = Array.isArray(patch.subtasks)
+      ? patch.subtasks
+          .map((item) => ({
+            id: item.id || uid('s'),
+            title: String(item.title || '').trim(),
+          }))
+          .filter((item) => item.title)
+      : []
+  }
+  if (patch.target != null && task.completion === 'counter') {
+    const n = Math.round(Number(patch.target))
+    if (!Number.isFinite(n) || n < 1 || n > 999) {
+      toast('目标遍数请填 1 到 999 的整数')
+      return false
+    }
+    task.target = n
+  }
+  await saveTasks()
+  return true
+}
+
+export async function removeTask(id) {
+  const index = practice.tasks.findIndex((item) => item.id === id)
+  if (index < 0) return false
+  practice.tasks.splice(index, 1)
+  await saveTasks()
+  if (practice.task.id === id) practice.task = practice.tasks[0] || practice.task
+  await refreshTodayMap()
+  return true
+}
+
+export async function pinTask(id) {
+  const task = practice.tasks.find((item) => item.id === id)
+  if (!task) return false
+  if (task.pinned) {
+    task.pinned = false
+    task.pinnedAt = 0
+  } else {
+    task.pinned = true
+    task.pinnedAt = Date.now()
+  }
+  sortTasksInPlace()
+  await saveTasks()
+  return true
+}
+
+export async function refreshTodayMap() {
+  const date = localDateKey()
+  practice.date = date
+  const map = {}
+  for (const task of practice.tasks) {
+    map[task.id] = await db.kvGet(`day.${task.id}.${date}`)
+  }
+  practice.todayByTask = map
+}
+
+export function taskDoneToday(task) {
+  return dayComplete(task, practice.todayByTask[task.id])
+}
+
+export function subtaskDone(taskId, subtaskId) {
+  return Boolean(practice.todayByTask[taskId]?.subtasks?.[subtaskId])
+}
+
+export async function toggleSubtask(taskId, subtaskId, date = localDateKey()) {
+  const task = practice.tasks.find((item) => item.id === taskId)
+  if (!task) return false
+  const subtasks = Array.isArray(task.subtasks) ? task.subtasks : []
+  const subtask = subtasks.find((item) => item.id === subtaskId)
+  if (!subtask) return false
+  const key = `day.${taskId}.${date}`
+  const prev = (await db.kvGet(key)) || {}
+  const doneMap = { ...(prev.subtasks || {}) }
+  if (doneMap[subtaskId]) delete doneMap[subtaskId]
+  else doneMap[subtaskId] = true
+  const allDone = subtasks.length > 0 && subtasks.every((item) => doneMap[item.id])
+  await db.kvSet(key, {
+    count: allDone ? 1 : 0,
+    target: subtasks.length,
+    completedAt: allDone ? prev.completedAt || new Date().toISOString() : null,
+    subtasks: doneMap,
+    updatedAt: new Date().toISOString(),
+  })
+  await refreshTodayMap()
+  notifyCloud()
+  return true
+}
 
 export async function listDays(taskId = TASK_ID) {
   const kv = await db.kvGetAll()
@@ -133,23 +528,19 @@ export async function listDays(taskId = TASK_ID) {
       count: value?.count || 0,
       target: value?.target ?? null,
       completedAt: value?.completedAt || null,
+      subtasks: value?.subtasks || {},
       updatedAt: value?.updatedAt || null,
     })
   }
   return days.sort((a, b) => a.date.localeCompare(b.date))
 }
 
-async function saveTask() {
-  await db.kvSet(`task.${practice.task.id}`, { ...practice.task })
-}
-
 export async function loadToday() {
-  const date = localDateKey()
-  practice.date = date
-  const day = await db.kvGet(`day.${practice.task.id}.${date}`)
+  await refreshTodayMap()
+  const day = practice.todayByTask[practice.task.id]
   practice.count = day?.count || 0
   practice.completedAt = day?.completedAt || null
-  syncCompleteFlag()
+  if (practice.task.completion === 'counter') syncCompleteFlag()
 }
 
 export async function ensureToday() {
@@ -159,30 +550,163 @@ export async function ensureToday() {
 export async function loadAssets() {
   const sheets = await db.assetsByRole(practice.task.id, 'sheet')
   const notes = await db.assetsByRole(practice.task.id, 'note')
+  const helperImages = await db.assetsByRole(practice.task.id, 'helper-image')
   revokeList(practice.sheets)
   revokeList(practice.notes)
+  revokeList(practice.helperImages)
   practice.sheets = sheets.map(viewAsset)
   practice.notes = notes.map(viewAsset)
+  practice.helperImages = helperImages.map(viewAsset)
   if (studio.sheetIndex >= practice.sheets.length) {
     studio.sheetIndex = Math.max(0, practice.sheets.length - 1)
   }
 }
 
+export function taskHasComponent(id) {
+  if (practice.task.completion !== 'counter') return false
+  const components = Array.isArray(practice.task.components) ? practice.task.components : []
+  return components.includes(id)
+}
+
 export async function loadCheckins() {
-  const rows = await db.assetsByRole(DRAW_ID, 'checkin')
+  const rows = (await db.assetsAll()).filter((item) => item.role === 'checkin')
   revokeList(practice.checkins)
   practice.checkins = rows.map(viewAsset)
 }
 
-export function checkinsOn(date) {
-  return practice.checkins.filter((item) => item.date === date)
+export async function loadJournals() {
+  const kv = await db.kvGetAll()
+  const texts = {}
+  const stamps = {}
+  for (const [key, value] of Object.entries(kv)) {
+    if (!key.startsWith('journal.')) continue
+    const date = key.slice(8)
+    texts[date] = value?.text || ''
+    stamps[date] = value?.updatedAt || ''
+  }
+  practice.journalTexts = texts
+  practice.journalUpdatedAt = stamps
+  const rows = (await db.assetsAll()).filter((item) => item.role === 'journal')
+  revokeList(practice.journals)
+  practice.journals = rows.map(viewAsset)
 }
 
-async function syncDrawingDay(date) {
-  const n = practice.checkins.filter((item) => item.date === date).length
-  const key = `day.${DRAW_ID}.${date}`
+export async function loadTaskNotes() {
+  const kv = await db.kvGetAll()
+  const texts = {}
+  const stamps = {}
+  for (const [key, value] of Object.entries(kv)) {
+    if (!key.startsWith('taskNote.')) continue
+    const taskId = key.slice(9)
+    texts[taskId] = value?.text || ''
+    stamps[taskId] = value?.updatedAt || ''
+  }
+  practice.taskNotes = texts
+  practice.taskNotesUpdatedAt = stamps
+}
+
+export async function saveTaskNote(taskId, text) {
+  const clean = String(text || '')
+  practice.taskNotes[taskId] = clean
+  const key = `taskNote.${taskId}`
+  if (!clean.trim()) {
+    await db.kvDelete(key)
+    delete practice.taskNotesUpdatedAt[taskId]
+    notifyCloud()
+    return
+  }
+  const updatedAt = new Date().toISOString()
+  practice.taskNotesUpdatedAt[taskId] = updatedAt
+  await db.kvSet(key, { text: clean, updatedAt })
+  notifyCloud()
+}
+
+export function journalPhotosOn(date) {
+  return practice.journals.filter((item) => item.date === date)
+}
+
+export function hasJournal(date) {
+  if ((practice.journalTexts[date] || '').trim()) return true
+  return practice.journals.some((item) => item.date === date)
+}
+
+async function saveJournalMeta(date) {
+  const text = practice.journalTexts[date] || ''
+  const photos = journalPhotosOn(date)
+  const key = `journal.${date}`
+  if (!text.trim() && !photos.length) {
+    await db.kvDelete(key)
+    delete practice.journalUpdatedAt[date]
+    notifyCloud()
+    return
+  }
+  const updatedAt = new Date().toISOString()
+  practice.journalUpdatedAt[date] = updatedAt
+  await db.kvSet(key, { text, updatedAt })
+  notifyCloud()
+}
+
+export async function saveJournalText(date, text) {
+  practice.journalTexts[date] = text
+  await saveJournalMeta(date)
+}
+
+export async function addJournalPhotos(fileList, date = practice.date) {
+  const files = [...fileList]
+  if (!files.length) return []
+  let order = practice.journals.reduce((max, item) => Math.max(max, item.order || 0), 0)
+  const added = []
+  for (const file of files) {
+    try {
+      const packed = await compressImage(file)
+      order += 1
+      await db.assetPut({
+        id: uid('a'),
+        taskId: 'journal',
+        role: 'journal',
+        date,
+        name: packed.name,
+        mime: packed.mime,
+        width: packed.width,
+        height: packed.height,
+        createdAt: new Date().toISOString(),
+        order,
+        blob: packed.blob,
+        thumbBlob: packed.thumbBlob,
+      })
+      added.push(true)
+    } catch (error) {
+      if (error instanceof ImageError) toast(error.message)
+      else toast(quotaMessage(error))
+    }
+  }
+  await loadJournals()
+  await saveJournalMeta(date)
+  return added
+}
+
+export async function removeJournalPhoto(id) {
+  const item = practice.journals.find((row) => row.id === id)
+  await db.assetDelete(id)
+  await loadJournals()
+  if (item?.date) await saveJournalMeta(item.date)
+}
+
+export function checkinsOn(date, taskId) {
+  return practice.checkins.filter((item) => {
+    if (item.date !== date) return false
+    if (taskId && item.taskId !== taskId) return false
+    return true
+  })
+}
+
+async function syncPhotoDay(taskId, date) {
+  const n = practice.checkins.filter((item) => item.taskId === taskId && item.date === date).length
+  const key = `day.${taskId}.${date}`
   if (n <= 0) {
     await db.kvDelete(key)
+    await refreshTodayMap()
+    notifyCloud()
     return
   }
   const prev = await db.kvGet(key)
@@ -191,9 +715,11 @@ async function syncDrawingDay(date) {
     completedAt: prev?.completedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   })
+  await refreshTodayMap()
+  notifyCloud()
 }
 
-export async function addCheckins(fileList, date = practice.date) {
+export async function addCheckins(fileList, date = practice.date, taskId = practice.task.id) {
   await ensureToday()
   const files = [...fileList]
   if (!files.length) return []
@@ -205,7 +731,7 @@ export async function addCheckins(fileList, date = practice.date) {
       order += 1
       const asset = {
         id: uid('a'),
-        taskId: DRAW_ID,
+        taskId,
         role: 'checkin',
         date,
         name: packed.name,
@@ -225,7 +751,13 @@ export async function addCheckins(fileList, date = practice.date) {
     }
   }
   await loadCheckins()
-  await syncDrawingDay(date)
+  await syncPhotoDay(taskId, date)
+  return added
+}
+
+export async function addHelperImages(fileList) {
+  const added = await addFiles('helper-image', fileList)
+  if (added.length) await loadAssets()
   return added
 }
 
@@ -233,26 +765,18 @@ export async function removeCheckin(id) {
   const item = practice.checkins.find((row) => row.id === id)
   await db.assetDelete(id)
   await loadCheckins()
-  if (item?.date) await syncDrawingDay(item.date)
+  if (item?.date && item?.taskId) await syncPhotoDay(item.taskId, item.date)
 }
 
 export async function bootPractice() {
   try {
     await db.openDb()
-    const task = await db.kvGet(`task.${TASK_ID}`)
-    practice.task = task || { id: TASK_ID, title: '练习吉他', target: 10 }
-    if (!task) await saveTask()
-    const drawing = await db.kvGet(`task.${DRAW_ID}`)
-    if (!drawing) {
-      await db.kvSet(`task.${DRAW_ID}`, {
-        id: DRAW_ID,
-        title: '画画',
-        completion: 'photo-log',
-      })
-    }
+    await loadTasks()
     await loadToday()
     await loadAssets()
     await loadCheckins()
+    await loadJournals()
+    await loadTaskNotes()
   } catch (error) {
     console.error(error)
     toast('本地数据打开失败，刷新试试')
@@ -276,8 +800,38 @@ export async function setTarget(n) {
   }
   practice.task.target = target
   syncCompleteFlag()
-  await saveTask()
+  await saveTasks()
   await saveDay()
+  return true
+}
+
+export async function toggleCheck() {
+  await ensureToday()
+  if (practice.completedAt) {
+    practice.count = 0
+    practice.completedAt = null
+  } else {
+    practice.count = 1
+    practice.completedAt = new Date().toISOString()
+  }
+  await saveDay()
+}
+
+export async function toggleCheckOnDate(taskId, date = localDateKey()) {
+  const task = practice.tasks.find((item) => item.id === taskId)
+  if (!task || task.completion !== 'check') return false
+  const key = `day.${taskId}.${date}`
+  const prev = (await db.kvGet(key)) || {}
+  const completed = Boolean(prev.completedAt) || prev.count > 0
+  await db.kvSet(key, {
+    count: completed ? 0 : 1,
+    target: null,
+    completedAt: completed ? null : new Date().toISOString(),
+    subtasks: prev.subtasks || {},
+    updatedAt: new Date().toISOString(),
+  })
+  await refreshTodayMap()
+  notifyCloud()
   return true
 }
 
@@ -323,9 +877,10 @@ export async function removeAsset(id) {
 }
 
 export async function reloadAll() {
-  const task = await db.kvGet(`task.${TASK_ID}`)
-  practice.task = task || { id: TASK_ID, title: '练习吉他', target: 10 }
+  await loadTasks()
   await loadToday()
   await loadAssets()
   await loadCheckins()
+  await loadJournals()
+  await loadTaskNotes()
 }
