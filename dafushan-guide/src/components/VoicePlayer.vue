@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { audioUrl, bindPlayer, speak, stopVoice, unbindPlayer } from '../utils/voice'
 
 const props = defineProps({
@@ -56,6 +56,16 @@ onBeforeUnmount(() => {
   stopVoice()
   unbindPlayer(el.value)
 })
+
+watch(
+  () => props.clip,
+  () => {
+    stopVoice()
+    playing.value = false
+    current.value = 0
+    duration.value = 0
+  },
+)
 
 function tap() {
   if (playing.value) {

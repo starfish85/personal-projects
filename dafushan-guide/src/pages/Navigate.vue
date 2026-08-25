@@ -76,6 +76,10 @@ onBeforeUnmount(() => {
   stopVoice()
 })
 watch(() => guide.value.text, maybeSpeak)
+watch(() => app.language, () => {
+  lastSpoken.value = ''
+  maybeSpeak()
+})
 
 function leave() {
   stopVoice()

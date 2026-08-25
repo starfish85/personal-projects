@@ -5,26 +5,33 @@ const base = import.meta.env.BASE_URL || './'
 let bound = null
 let speakingKey = ''
 
-const AUDIO_VER = '3'
+const AUDIO_VER = '4'
+
+function enVoice() {
+  return app.language === 'en'
+}
 
 export function audioUrl(clip) {
-  const ext = String(clip || '').startsWith('poi/') ? 'm4a' : 'wav'
-  return `${base}audio/${clip}.${ext}?v=${AUDIO_VER}`
+  const path = String(clip || '')
+  const ext = path.includes('poi/') ? 'm4a' : 'wav'
+  return `${base}audio/${path}.${ext}?v=${AUDIO_VER}`
 }
 
 export function clipForPoi(id) {
-  return id ? `poi/${id}` : 'test'
+  const folder = enVoice() ? 'en/poi' : 'poi'
+  return id ? `${folder}/${id}` : 'test'
 }
 
 export function clipForGuide(guide) {
-  if (!guide) return 'nav-plan'
-  if (guide.arrived) return 'nav-arrived'
-  if (guide.text === '正在规划路线') return 'nav-plan'
-  if (guide.text === '即将到达目的地') return 'nav-soon'
-  if (guide.nextTurn === '左转') return 'nav-left'
-  if (guide.nextTurn === '右转') return 'nav-right'
-  if (guide.nextTurn === '掉头') return 'nav-uturn'
-  return 'nav-forward'
+  const prefix = enVoice() ? 'en/' : ''
+  if (!guide) return `${prefix}nav-plan`
+  if (guide.arrived) return `${prefix}nav-arrived`
+  if (guide.text === '正在规划路线') return `${prefix}nav-plan`
+  if (guide.text === '即将到达目的地') return `${prefix}nav-soon`
+  if (guide.nextTurn === '左转') return `${prefix}nav-left`
+  if (guide.nextTurn === '右转') return `${prefix}nav-right`
+  if (guide.nextTurn === '掉头') return `${prefix}nav-uturn`
+  return `${prefix}nav-forward`
 }
 
 export function bindPlayer(el) {

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { FONT_OPTIONS, app, persistSettings, setFontSize } from '../stores/app'
 import { PARK_INFO, POIS } from '../data/pois'
 import { useGeolocation } from '../composables/useGeolocation'
+import { stopVoice } from '../utils/voice'
 
 const { restartWatch } = useGeolocation()
 const gpsLabel = computed(() => {
@@ -19,6 +20,12 @@ const gpsLabel = computed(() => {
 function onMockChange() {
   persistSettings()
   restartWatch()
+}
+
+function onLanguageChange() {
+  app.playedVoices = {}
+  persistSettings()
+  stopVoice()
 }
 </script>
 
@@ -48,9 +55,10 @@ function onMockChange() {
       <article class="card box">
         <div class="line">
           <span>语言</span>
-          <select v-model="app.language" @change="persistSettings()">
+          <select v-model="app.language" @change="onLanguageChange">
             <option value="zh">中文</option>
             <option value="yue">粤语（若手机有粤语语音）</option>
+            <option value="en">Eng</option>
           </select>
         </div>
         <div class="line">
