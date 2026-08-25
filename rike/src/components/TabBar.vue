@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { checkinsForTask, practice } from '../stores/practice'
+import { practice } from '../stores/practice'
 
 const route = useRoute()
 const router = useRouter()
@@ -26,9 +26,7 @@ function goCalendar() {
 }
 
 function goGallery() {
-  const taskWithPhotos = practice.tasks.find((task) => checkinsForTask(task.id).length)
-  const taskId = taskWithPhotos?.id || practice.task?.id || practice.tasks[0]?.id || ''
-  router.push(taskId ? `/gallery/${taskId}` : '/gallery')
+  router.push('/gallery')
 }
 </script>
 

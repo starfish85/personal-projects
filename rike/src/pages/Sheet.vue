@@ -1,11 +1,11 @@
 <script setup>
 import { computed, onActivated, ref, watch } from 'vue'
-import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import NotesOverlay from '../components/NotesOverlay.vue'
 import PracticeCounter from '../components/PracticeCounter.vue'
 import SheetViewer from '../components/SheetViewer.vue'
 import * as db from '../db'
-import { addFiles, ensureToday, practice, removeAsset, setInk, studio } from '../stores/practice'
+import { addFiles, ensureToday, openTask, practice, removeAsset, setInk, studio } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 
 defineOptions({ name: 'Sheet' })
@@ -18,6 +18,7 @@ const WIDTHS = [
 ]
 
 const router = useRouter()
+const route = useRoute()
 const viewer = ref(null)
 const fileRef = ref(null)
 const strokes = ref([])
@@ -29,6 +30,12 @@ const pageLabel = computed(() => {
   if (!practice.sheets.length) return '0/0'
   return `${studio.sheetIndex + 1}/${practice.sheets.length}`
 })
+
+async function syncTaskFromRoute() {
+  const id = String(route.params.taskId || '')
+  if (id && id !== practice.task.id) await openTask(id)
+  else await ensureToday()
+}
 
 async function loadStrokes() {
   if (!page.value) {
@@ -155,8 +162,10 @@ function goHome() {
 }
 
 onActivated(() => {
-  ensureToday()
+  syncTaskFromRoute()
 })
+
+watch(() => route.params.taskId, syncTaskFromRoute, { immediate: true })
 
 onBeforeRouteLeave(() => {
   hideTools()

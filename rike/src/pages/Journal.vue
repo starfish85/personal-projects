@@ -59,6 +59,10 @@ function pick() {
   fileRef.value?.click()
 }
 
+function backToCalendar() {
+  router.push({ path: '/calendar', query: { date: date.value } })
+}
+
 async function onFiles(event) {
   await addJournalPhotos(event.target.files, date.value)
   event.target.value = ''
@@ -85,7 +89,7 @@ async function onDelete(id) {
 <template>
   <main class="page">
     <header class="head">
-      <span />
+      <button type="button" class="back" @click="backToCalendar">日历</button>
       <h1>日记</h1>
       <button v-if="!isFuture" type="button" class="add" @click="pick">图片</button>
       <span v-else />
@@ -138,6 +142,13 @@ async function onDelete(id) {
   margin: 0;
   text-align: center;
   font-size: 18px;
+}
+
+.back {
+  min-height: 44px;
+  color: var(--amber);
+  font-weight: 650;
+  text-align: left;
 }
 
 .add {

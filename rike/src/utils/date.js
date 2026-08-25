@@ -25,6 +25,12 @@ export function formatDayTitle(dateKey) {
   return `${y}年${m}月${d}日 周${weeks[date.getDay()]}`
 }
 
+export function weekdayOf(dateKey) {
+  const [y, m, d] = String(dateKey || localDateKey()).split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.getDay() || 7
+}
+
 export function formatClock(iso) {
   if (!iso) return ''
   const date = new Date(iso)

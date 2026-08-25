@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onActivated, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import PhotoViewer from '../components/PhotoViewer.vue'
 import {
   addCheckins,
@@ -19,15 +19,16 @@ import {
   toggleCheckOnDate,
   toggleSubtask,
 } from '../stores/practice'
-import { confirmDialog } from '../stores/ui'
+import { confirmDialog, toast } from '../stores/ui'
 import { formatClock, formatDayTitle, localDateKey, monthGrid } from '../utils/date'
 
 defineOptions({ name: 'Calendar' })
 
 const router = useRouter()
+const route = useRoute()
 const today = localDateKey()
 const cursor = ref(new Date())
-const selected = ref(today)
+const selected = ref(String(route.query.date || today))
 const daysByTask = ref({})
 const viewerOpen = ref(false)
 const startIndex = ref(0)
@@ -45,7 +46,6 @@ const isFuture = computed(() => selected.value > today)
 const isToday = computed(() => selected.value === today)
 const canEditJournal = computed(() => selected.value <= today)
 const canCompleteTasks = computed(() => selected.value === today)
-const addLabel = computed(() => (isFuture.value ? '安排任务' : '添加任务'))
 
 function record(taskId, date) {
   return daysByTask.value[taskId]?.[date] || null
@@ -111,11 +111,14 @@ function shiftMonth(delta) {
 }
 
 function pick(dateKey) {
-  if (dateKey) selected.value = dateKey
+  if (!dateKey) return
+  selected.value = dateKey
+  router.replace({ path: '/calendar', query: { date: dateKey } })
 }
 
 function addTaskForSelected() {
-  router.push({ path: '/', query: { add: '1', date: selected.value } })
+  if (!isFuture.value) return
+  router.push({ path: '/', query: { add: '1', date: selected.value, from: 'calendar' } })
 }
 
 function openGallery(taskId) {
@@ -127,7 +130,7 @@ function openTask(taskId) {
 }
 
 function editTask(taskId) {
-  router.push({ path: '/', query: { edit: taskId } })
+  router.push({ path: '/', query: { edit: taskId, date: selected.value, from: 'calendar' } })
 }
 
 function pickPhoto(taskId) {
@@ -194,6 +197,27 @@ async function toggleCheckForSelected(task) {
 
 onMounted(refresh)
 onActivated(refresh)
+
+watch(
+  () => route.query.date,
+  (date) => {
+    if (!date) return
+    selected.value = String(date)
+    const [y, m] = selected.value.split('-').map(Number)
+    if (y && m) cursor.value = new Date(y, m - 1, 1)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => route.query.saved,
+  (saved) => {
+    if (!saved) return
+    toast(`已保存到 ${selected.value}`)
+    router.replace({ path: '/calendar', query: { date: selected.value } })
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -240,7 +264,7 @@ onActivated(refresh)
       <h2>{{ formatDayTitle(selected) }}</h2>
       <template>
         <div class="day-actions">
-          <button type="button" class="open" @click="addTaskForSelected">{{ addLabel }}</button>
+          <button v-if="isFuture" type="button" class="open" @click="addTaskForSelected">安排任务</button>
           <button v-if="canEditJournal" type="button" class="open" @click="router.push(`/journal/${selected}`)">
             {{ journalExists ? '打开日记' : '写日记' }}
           </button>

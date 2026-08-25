@@ -1,13 +1,20 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { onActivated, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import NotesOverlay from '../components/NotesOverlay.vue'
-import { addFiles, practice } from '../stores/practice'
+import { addFiles, ensureToday, openTask, practice } from '../stores/practice'
 
 const router = useRouter()
+const route = useRoute()
 const fileRef = ref(null)
 const open = ref(false)
 const startIndex = ref(0)
+
+async function syncTaskFromRoute() {
+  const id = String(route.params.taskId || '')
+  if (id && id !== practice.task.id) await openTask(id)
+  else await ensureToday()
+}
 
 function openAt(index) {
   startIndex.value = index
@@ -22,6 +29,9 @@ async function onFiles(event) {
   await addFiles('note', event.target.files)
   event.target.value = ''
 }
+
+onActivated(syncTaskFromRoute)
+watch(() => route.params.taskId, syncTaskFromRoute, { immediate: true })
 </script>
 
 <template>

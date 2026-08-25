@@ -210,12 +210,12 @@ onBeforeUnmount(() => {
       <textarea v-model="noteDraft" class="note" rows="5" placeholder="写下这次任务的要点、提醒或复盘" />
     </article>
 
-    <button v-if="components.sheet" class="panel link-card" type="button" @click="router.push('/sheet')">
+    <button v-if="components.sheet" class="panel link-card" type="button" @click="router.push(`/sheet/${practice.task.id}`)">
       <strong>曲谱</strong>
       <span>{{ practice.sheets.length ? `${practice.sheets.length} 页` : '还没有谱' }}</span>
     </button>
 
-    <button v-if="components.notes" class="panel link-card" type="button" @click="router.push('/notes')">
+    <button v-if="components.notes" class="panel link-card" type="button" @click="router.push(`/notes/${practice.task.id}`)">
       <strong>笔记</strong>
       <span>{{ practice.notes.length ? `${practice.notes.length} 张` : '还没有笔记' }}</span>
     </button>

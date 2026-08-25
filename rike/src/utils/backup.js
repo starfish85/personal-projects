@@ -26,7 +26,7 @@ export async function exportBackup() {
   }
   return {
     app: 'rike',
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     kv,
     assets: packedAssets,

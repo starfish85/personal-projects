@@ -1,6 +1,6 @@
 import { computed, reactive } from 'vue'
 import * as db from '../db'
-import { localDateKey, uid } from '../utils/date'
+import { localDateKey, uid, weekdayOf } from '../utils/date'
 import { compressImage, ImageError } from '../utils/image'
 import { toast } from './ui'
 
@@ -267,7 +267,11 @@ export function taskOnDate(task, date = localDateKey()) {
   if (!task) return false
   if (task.archived) return false
   if (task.paused) return false
-  if (task.longTerm) return true
+  if (task.longTerm) {
+    const weekdays = Array.isArray(task.repeatWeekdays) ? task.repeatWeekdays : []
+    if (!weekdays.length) return true
+    return weekdays.includes(weekdayOf(date))
+  }
   return (task.dueDate || localDateKey()) === date
 }
 
@@ -292,6 +296,9 @@ export function normalizeTask(task) {
     if (notes) components.push('notes')
   }
   const componentSet = new Set(components || [])
+  const repeatWeekdays = [...new Set(Array.isArray(task.repeatWeekdays) ? task.repeatWeekdays : [])]
+    .map((item) => Math.round(Number(item)))
+    .filter((item) => item >= 1 && item <= 7)
   return {
     ...task,
     sheet: task.completion === 'counter' ? componentSet.has('sheet') : false,
@@ -299,6 +306,7 @@ export function normalizeTask(task) {
     components: [...componentSet],
     dueDate: task.dueDate || localDateKey(),
     longTerm: 'longTerm' in task ? Boolean(task.longTerm) : !task.dueDate,
+    repeatWeekdays,
     archived: Boolean(task.archived),
     paused: Boolean(task.paused),
     subtasks: Array.isArray(task.subtasks)
@@ -338,6 +346,7 @@ function defaultTasks(guitar, drawing) {
       components: DEFAULT_RICH_COMPONENTS,
       dueDate: localDateKey(),
       longTerm: true,
+      repeatWeekdays: [],
       order: 0,
     },
     {
@@ -349,6 +358,7 @@ function defaultTasks(guitar, drawing) {
       notes: false,
       dueDate: localDateKey(),
       longTerm: true,
+      repeatWeekdays: [],
       order: 1,
     },
   ]
@@ -356,15 +366,15 @@ function defaultTasks(guitar, drawing) {
 
 async function migrateLocalData() {
   const version = (await db.kvGet('schemaVersion')) || 0
-  if (version >= 2) return
+  if (version >= 3) return
   const tasks = await db.kvGet('tasks')
   if (!Array.isArray(tasks)) {
-    await db.kvSet('schemaVersion', 2)
+    await db.kvSet('schemaVersion', 3)
     return
   }
   const normalized = tasks.map(normalizeTask)
   await db.kvSet('tasks', normalized)
-  await db.kvSet('schemaVersion', 2)
+  await db.kvSet('schemaVersion', 3)
 }
 
 async function loadTasks() {
@@ -407,6 +417,8 @@ export async function addTask({
   subtasks,
   dueDate,
   longTerm,
+  repeatWeekdays,
+  paused,
   template,
 }) {
   const name = String(title || '').trim()
@@ -426,7 +438,10 @@ export async function addTask({
     reminder: reminder || '',
     dueDate: dueDate || localDateKey(),
     longTerm: Boolean(longTerm),
-    paused: false,
+    repeatWeekdays: [...new Set(Array.isArray(repeatWeekdays) ? repeatWeekdays : [])]
+      .map((item) => Math.round(Number(item)))
+      .filter((item) => item >= 1 && item <= 7),
+    paused: Boolean(paused),
     archived: false,
     sheet: Boolean(sheet),
     notes: Boolean(notes),
@@ -474,6 +489,11 @@ export async function updateTask(id, patch) {
   }
   if ('dueDate' in patch) task.dueDate = patch.dueDate || localDateKey()
   if ('longTerm' in patch) task.longTerm = Boolean(patch.longTerm)
+  if ('repeatWeekdays' in patch) {
+    task.repeatWeekdays = [...new Set(Array.isArray(patch.repeatWeekdays) ? patch.repeatWeekdays : [])]
+      .map((item) => Math.round(Number(item)))
+      .filter((item) => item >= 1 && item <= 7)
+  }
   if ('paused' in patch) task.paused = Boolean(patch.paused)
   if ('archived' in patch) task.archived = Boolean(patch.archived)
   if ('subtasks' in patch) {

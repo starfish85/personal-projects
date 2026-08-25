@@ -23,7 +23,7 @@ import {
 } from '../stores/practice'
 import SyncBar from '../components/SyncBar.vue'
 import TimePicker from '../components/TimePicker.vue'
-import { confirmDialog } from '../stores/ui'
+import { confirmDialog, toast } from '../stores/ui'
 import { localDateKey } from '../utils/date'
 import { ensureNotifyPermission } from '../utils/remind'
 
@@ -38,6 +38,17 @@ const archiveOpen = ref(false)
 const timeOpen = ref(false)
 const openId = ref(null)
 const expandedId = ref(null)
+const saving = ref(false)
+const fromCalendarDate = ref('')
+const WEEKDAYS = [
+  { value: 1, label: '一' },
+  { value: 2, label: '二' },
+  { value: 3, label: '三' },
+  { value: 4, label: '四' },
+  { value: 5, label: '五' },
+  { value: 6, label: '六' },
+  { value: 7, label: '日' },
+]
 const form = reactive({
   title: '',
   color: TASK_COLORS[0],
@@ -50,6 +61,7 @@ const form = reactive({
   subtasks: [],
   dueDate: localDateKey(),
   longTerm: false,
+  repeatWeekdays: [],
   paused: false,
 })
 const drag = reactive({
@@ -84,8 +96,11 @@ function openAdd() {
   closeSwipe()
   form.title = ''
   form.reminder = ''
-  form.dueDate = String(route.query.date || localDateKey())
+  const date = String(route.query.date || localDateKey())
+  form.dueDate = date
+  fromCalendarDate.value = route.query.from === 'calendar' ? date : ''
   form.longTerm = false
+  form.repeatWeekdays = []
   form.paused = false
   applyTemplate(TASK_TEMPLATES.find((item) => item.id === 'custom') || TASK_TEMPLATES[0])
   form.color = TASK_COLORS.find((c) => !practice.tasks.some((t) => t.color === c)) || form.color
@@ -105,7 +120,9 @@ function openEdit(task) {
   form.subtasks = Array.isArray(task.subtasks) ? task.subtasks.map((item) => ({ ...item })) : []
   form.dueDate = task.dueDate || localDateKey()
   form.longTerm = Boolean(task.longTerm)
+  form.repeatWeekdays = Array.isArray(task.repeatWeekdays) ? [...task.repeatWeekdays] : []
   form.paused = Boolean(task.paused)
+  fromCalendarDate.value = route.query.from === 'calendar' ? String(route.query.date || task.dueDate || '') : ''
   form.template =
     TASK_TEMPLATES.find((item) => item.id === task.template)?.id ||
     TASK_TEMPLATES.find((item) => item.completion === task.completion)?.id ||
@@ -141,16 +158,32 @@ function toggleComponent(id) {
   form.notes = next.has('notes')
 }
 
+function repeatOn(day) {
+  return form.repeatWeekdays.includes(day)
+}
+
+function toggleRepeat(day) {
+  const next = new Set(form.repeatWeekdays)
+  if (next.has(day)) next.delete(day)
+  else next.add(day)
+  form.repeatWeekdays = [...next].sort((a, b) => a - b)
+}
+
 function ensureRichComponents() {
   if (form.completion !== 'counter') return form.components.length ? [...form.components] : []
   return form.components.length ? form.components : [...DEFAULT_RICH_COMPONENTS]
 }
 
-function goHomeAfterSave() {
+async function goHomeAfterSave() {
+  const calendarDate = fromCalendarDate.value
   closeEditor()
   expandedId.value = null
-  if (location.hash !== '#/') location.hash = '#/'
-  router.replace('/')
+  fromCalendarDate.value = ''
+  if (calendarDate) {
+    await router.replace({ path: '/calendar', query: { date: calendarDate, saved: '1' } })
+    return
+  }
+  await router.replace('/')
 }
 
 function openAddFromRoute() {
@@ -172,6 +205,8 @@ watch(() => [route.query.add, route.query.edit], openAddFromRoute)
 function closeEditor() {
   editor.value = null
   editorStep.value = 'details'
+  saving.value = false
+  fromCalendarDate.value = ''
 }
 
 function backToTemplate() {
@@ -179,12 +214,38 @@ function backToTemplate() {
 }
 
 async function saveEditor() {
-  if (editor.value?.mode === 'add') {
-    const task = await addTask({
+  if (saving.value) return
+  saving.value = true
+  try {
+    const calendarDate = fromCalendarDate.value
+    if (editor.value?.mode === 'add') {
+      const task = await addTask({
+        title: form.title,
+        color: form.color,
+        completion: form.completion,
+        target: 10,
+        reminder: form.reminder,
+        template: form.template,
+        sheet: form.sheet,
+        notes: form.notes,
+        components: ensureRichComponents(),
+        subtasks: cleanSubtasks(),
+        dueDate: form.dueDate,
+        longTerm: form.longTerm,
+        repeatWeekdays: form.longTerm ? form.repeatWeekdays : [],
+        paused: form.paused,
+      })
+      if (task) {
+        if (form.reminder) await ensureNotifyPermission()
+        const message = calendarDate ? `已安排到 ${form.dueDate}` : '任务已创建'
+        await goHomeAfterSave()
+        toast(message)
+      }
+      return
+    }
+    const ok = await updateTask(editor.value.id, {
       title: form.title,
       color: form.color,
-      completion: form.completion,
-      target: 10,
       reminder: form.reminder,
       template: form.template,
       sheet: form.sheet,
@@ -193,30 +254,17 @@ async function saveEditor() {
       subtasks: cleanSubtasks(),
       dueDate: form.dueDate,
       longTerm: form.longTerm,
+      repeatWeekdays: form.longTerm ? form.repeatWeekdays : [],
       paused: form.paused,
     })
-    if (task) {
+    if (ok) {
       if (form.reminder) await ensureNotifyPermission()
-      goHomeAfterSave()
+      const message = calendarDate ? `已更新 ${form.dueDate}` : '任务已保存'
+      await goHomeAfterSave()
+      toast(message)
     }
-    return
-  }
-  const ok = await updateTask(editor.value.id, {
-    title: form.title,
-    color: form.color,
-    reminder: form.reminder,
-    template: form.template,
-    sheet: form.sheet,
-    notes: form.notes,
-    components: ensureRichComponents(),
-    subtasks: cleanSubtasks(),
-    dueDate: form.dueDate,
-    longTerm: form.longTerm,
-    paused: form.paused,
-  })
-  if (ok) {
-    if (form.reminder) await ensureNotifyPermission()
-    goHomeAfterSave()
+  } finally {
+    saving.value = false
   }
 }
 
@@ -560,6 +608,21 @@ async function toggleSub(task, subtask) {
               <span>暂停任务</span>
             </label>
           </div>
+          <div v-if="form.longTerm" class="repeat-row">
+            <span>重复</span>
+            <div class="weekday-picks">
+              <button
+                v-for="day in WEEKDAYS"
+                :key="day.value"
+                type="button"
+                :class="{ on: repeatOn(day.value) }"
+                @click="toggleRepeat(day.value)"
+              >
+                {{ day.label }}
+              </button>
+            </div>
+            <em>{{ form.repeatWeekdays.length ? '按选中的周几出现' : '每天出现' }}</em>
+          </div>
           <div class="component-block">
             <p>组件</p>
             <div class="kinds">
@@ -591,7 +654,9 @@ async function toggleSub(task, subtask) {
               归档
             </button>
             <button class="btn btn-ghost" type="button" @click="closeEditor">取消</button>
-            <button class="btn btn-primary" type="button" @click="saveEditor">保存</button>
+            <button class="btn btn-primary" type="button" :disabled="saving" @click="saveEditor">
+              {{ saving ? '保存中' : '保存' }}
+            </button>
           </div>
         </template>
       </div>
@@ -985,6 +1050,39 @@ async function toggleSub(task, subtask) {
 
 .date-row .toggle {
   min-height: 42px;
+}
+
+.repeat-row {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.repeat-row > span,
+.repeat-row em {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-style: normal;
+}
+
+.weekday-picks {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.weekday-picks button {
+  min-width: 0;
+  min-height: 38px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.weekday-picks button.on {
+  background: var(--amber);
+  color: var(--ink);
 }
 
 .toggle input {
