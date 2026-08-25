@@ -10,6 +10,7 @@ import {
   practice,
   removeCheckin,
   subtaskDone,
+  taskHasGallery,
   toggleSubtask,
 } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
@@ -38,7 +39,7 @@ function pick() {
 }
 
 async function onFiles(event) {
-  const added = await addCheckins(event.target.files, practice.date)
+  const added = await addCheckins(event.target.files)
   event.target.value = ''
   if (added.length) toast('已记下')
 }
@@ -75,7 +76,7 @@ async function onDelete(id) {
     </header>
 
     <p v-if="doneToday" class="ok">{{ doneLabel }}</p>
-    <button v-if="todayPhotos.length" type="button" class="gallery-link" @click="openGallery">
+    <button v-if="taskHasGallery(practice.task)" type="button" class="gallery-link" @click="openGallery">
       查看作品墙
     </button>
 

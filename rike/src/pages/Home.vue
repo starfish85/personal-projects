@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   DEFAULT_RICH_COMPONENTS,
@@ -8,14 +8,17 @@ import {
   TASK_TEMPLATES,
   addTask,
   dayComplete,
+  ensureToday,
   openTask,
   pinTask,
   practice,
+  quotaMessage,
   removeTask,
   restoreTask,
   subtaskDone,
   taskTodayLine,
   taskDoneToday,
+  taskOnDate,
   tasksOnDate,
   toggleCheck,
   toggleSubtask,
@@ -24,7 +27,7 @@ import {
 import SyncBar from '../components/SyncBar.vue'
 import TimePicker from '../components/TimePicker.vue'
 import { confirmDialog, toast } from '../stores/ui'
-import { localDateKey } from '../utils/date'
+import { localDateKey, weekdayOf } from '../utils/date'
 import { ensureNotifyPermission } from '../utils/remind'
 
 defineOptions({ name: 'Home' })
@@ -40,6 +43,7 @@ const openId = ref(null)
 const expandedId = ref(null)
 const saving = ref(false)
 const fromCalendarDate = ref('')
+const pageRef = ref(null)
 const WEEKDAYS = [
   { value: 1, label: '一' },
   { value: 2, label: '二' },
@@ -169,21 +173,35 @@ function toggleRepeat(day) {
   form.repeatWeekdays = [...next].sort((a, b) => a - b)
 }
 
+function setLongTerm(on) {
+  const was = form.longTerm
+  form.longTerm = on
+  if (on && !was && form.repeatWeekdays.length === 0) {
+    form.repeatWeekdays = [weekdayOf(form.dueDate)]
+  }
+  if (!on && was) form.repeatWeekdays = []
+}
+
 function ensureRichComponents() {
   if (form.completion !== 'counter') return form.components.length ? [...form.components] : []
   return form.components.length ? form.components : [...DEFAULT_RICH_COMPONENTS]
 }
 
-async function goHomeAfterSave() {
-  const calendarDate = fromCalendarDate.value
-  closeEditor()
-  expandedId.value = null
+function finishClose({ calendarDate } = {}) {
+  editor.value = null
+  editorStep.value = 'details'
+  saving.value = false
   fromCalendarDate.value = ''
+  expandedId.value = null
   if (calendarDate) {
-    await router.replace({ path: '/calendar', query: { date: calendarDate, saved: '1' } })
-    return
+    return router.replace({ path: '/calendar', query: { date: calendarDate } })
   }
-  await router.replace('/')
+}
+
+function requestClose() {
+  if (saving.value) return
+  const calendarDate = fromCalendarDate.value
+  return finishClose({ calendarDate })
 }
 
 function openAddFromRoute() {
@@ -199,18 +217,35 @@ function openAddFromRoute() {
   }
 }
 
-onMounted(openAddFromRoute)
+onMounted(() => {
+  ensureToday()
+  openAddFromRoute()
+})
+onActivated(() => {
+  ensureToday()
+})
 watch(() => [route.query.add, route.query.edit], openAddFromRoute)
 
-function closeEditor() {
-  editor.value = null
-  editorStep.value = 'details'
-  saving.value = false
-  fromCalendarDate.value = ''
+function backToTemplate() {
+  if (saving.value) return
+  editorStep.value = 'template'
 }
 
-function backToTemplate() {
-  editorStep.value = 'template'
+function savePayload() {
+  return {
+    title: form.title,
+    color: form.color,
+    reminder: form.reminder,
+    template: form.template,
+    sheet: form.sheet,
+    notes: form.notes,
+    components: ensureRichComponents(),
+    subtasks: cleanSubtasks(),
+    dueDate: form.dueDate,
+    longTerm: form.longTerm,
+    repeatWeekdays: form.longTerm ? form.repeatWeekdays : [],
+    paused: form.paused,
+  }
 }
 
 async function saveEditor() {
@@ -218,57 +253,41 @@ async function saveEditor() {
   saving.value = true
   try {
     const calendarDate = fromCalendarDate.value
+    const today = localDateKey()
     if (editor.value?.mode === 'add') {
       const task = await addTask({
-        title: form.title,
-        color: form.color,
+        ...savePayload(),
         completion: form.completion,
         target: 10,
-        reminder: form.reminder,
-        template: form.template,
-        sheet: form.sheet,
-        notes: form.notes,
-        components: ensureRichComponents(),
-        subtasks: cleanSubtasks(),
-        dueDate: form.dueDate,
-        longTerm: form.longTerm,
-        repeatWeekdays: form.longTerm ? form.repeatWeekdays : [],
-        paused: form.paused,
       })
-      if (task) {
-        if (form.reminder) await ensureNotifyPermission()
-        const message = calendarDate ? `已安排到 ${form.dueDate}` : '任务已创建'
-        await goHomeAfterSave()
-        toast(message)
+      if (!task) return
+      if (form.reminder) await ensureNotifyPermission()
+      const visibleToday = taskOnDate(task, today)
+      const goCalendar = calendarDate || (!visibleToday ? task.dueDate : '')
+      const message = goCalendar ? `已安排到 ${task.dueDate || form.dueDate}` : '任务已创建'
+      await finishClose({ calendarDate: goCalendar || undefined })
+      if (!goCalendar) {
+        if (pageRef.value) pageRef.value.scrollTop = 0
+        if (task.subtasks?.length) expandedId.value = task.id
       }
+      toast(message)
       return
     }
-    const ok = await updateTask(editor.value.id, {
-      title: form.title,
-      color: form.color,
-      reminder: form.reminder,
-      template: form.template,
-      sheet: form.sheet,
-      notes: form.notes,
-      components: ensureRichComponents(),
-      subtasks: cleanSubtasks(),
-      dueDate: form.dueDate,
-      longTerm: form.longTerm,
-      repeatWeekdays: form.longTerm ? form.repeatWeekdays : [],
-      paused: form.paused,
-    })
-    if (ok) {
-      if (form.reminder) await ensureNotifyPermission()
-      const message = calendarDate ? `已更新 ${form.dueDate}` : '任务已保存'
-      await goHomeAfterSave()
-      toast(message)
-    }
+    const ok = await updateTask(editor.value.id, savePayload())
+    if (!ok) return
+    if (form.reminder) await ensureNotifyPermission()
+    const message = calendarDate ? `已更新到 ${form.dueDate}` : '任务已保存'
+    await finishClose({ calendarDate: calendarDate || undefined })
+    toast(message)
+  } catch (error) {
+    toast(quotaMessage(error))
   } finally {
     saving.value = false
   }
 }
 
 async function deleteCurrent() {
+  if (saving.value) return
   const ok = await confirmDialog({
     title: '归档这个任务？',
     copy: '首页和日历里不再出现它。以前的记录和图片还在本机。',
@@ -277,7 +296,7 @@ async function deleteCurrent() {
   })
   if (!ok) return
   await removeTask(editor.value.id)
-  closeEditor()
+  finishClose()
 }
 
 function isDone(task) {
@@ -441,7 +460,7 @@ async function toggleSub(task, subtask) {
 </script>
 
 <template>
-  <main class="page" @click="onPageClick" @scroll="closeSwipe">
+  <main ref="pageRef" class="page" @click="onPageClick" @scroll="closeSwipe">
     <header class="head">
       <p class="brand">日课</p>
       <div class="head-actions">
@@ -540,7 +559,7 @@ async function toggleSub(task, subtask) {
       <span>+</span>
     </button>
 
-    <div v-if="editor" class="modal-mask" @click.self="closeEditor">
+    <div v-if="editor" class="modal-mask" @click.self="requestClose">
       <div class="modal-sheet">
         <template v-if="editorStep === 'template'">
           <h2 class="modal-title">选择模板</h2>
@@ -551,6 +570,7 @@ async function toggleSub(task, subtask) {
               :key="item.id"
               type="button"
               class="template-card"
+              :disabled="saving"
               @click="chooseTemplate(item)"
             >
               <i :style="{ background: item.color }" />
@@ -561,12 +581,18 @@ async function toggleSub(task, subtask) {
             </button>
           </div>
           <div class="modal-actions">
-            <button class="btn btn-ghost" type="button" @click="closeEditor">取消</button>
+            <button class="btn btn-ghost" type="button" :disabled="saving" @click="requestClose">取消</button>
           </div>
         </template>
         <template v-else>
           <div class="modal-head">
-            <button v-if="editor.mode === 'add'" type="button" class="back-step" @click="backToTemplate">
+            <button
+              v-if="editor.mode === 'add'"
+              type="button"
+              class="back-step"
+              :disabled="saving"
+              @click="backToTemplate"
+            >
               模板
             </button>
             <h2 class="modal-title">{{ editor.mode === 'add' ? '新任务' : '改任务' }}</h2>
@@ -574,6 +600,9 @@ async function toggleSub(task, subtask) {
           </div>
           <p v-if="editor.mode === 'add' && form.dueDate !== practice.date" class="modal-copy">
             安排到 {{ form.dueDate }}
+          </p>
+          <p v-if="fromCalendarDate && editor.mode === 'edit'" class="modal-copy">
+            这里改的是整条任务，不是只改这一天。
           </p>
           <input v-model="form.title" class="field" type="text" maxlength="20" placeholder="名称" />
           <div class="colors">
@@ -600,7 +629,12 @@ async function toggleSub(task, subtask) {
               <input v-model="form.dueDate" type="date" />
             </label>
             <label class="toggle">
-              <input v-model="form.longTerm" type="checkbox" />
+              <input
+                type="checkbox"
+                :checked="form.longTerm"
+                :disabled="saving"
+                @change="setLongTerm($event.target.checked)"
+              />
               <span>长期任务</span>
             </label>
             <label class="toggle">
@@ -650,10 +684,16 @@ async function toggleSub(task, subtask) {
             </div>
           </div>
           <div class="modal-actions">
-            <button v-if="editor.mode === 'edit'" class="btn btn-danger" type="button" @click="deleteCurrent">
+            <button
+              v-if="editor.mode === 'edit'"
+              class="btn btn-danger"
+              type="button"
+              :disabled="saving"
+              @click="deleteCurrent"
+            >
               归档
             </button>
-            <button class="btn btn-ghost" type="button" @click="closeEditor">取消</button>
+            <button class="btn btn-ghost" type="button" :disabled="saving" @click="requestClose">取消</button>
             <button class="btn btn-primary" type="button" :disabled="saving" @click="saveEditor">
               {{ saving ? '保存中' : '保存' }}
             </button>

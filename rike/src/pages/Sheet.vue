@@ -5,7 +5,7 @@ import NotesOverlay from '../components/NotesOverlay.vue'
 import PracticeCounter from '../components/PracticeCounter.vue'
 import SheetViewer from '../components/SheetViewer.vue'
 import * as db from '../db'
-import { addFiles, ensureToday, openTask, practice, removeAsset, setInk, studio } from '../stores/practice'
+import { addFiles, openTask, practice, removeAsset, setInk, studio } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 
 defineOptions({ name: 'Sheet' })
@@ -31,10 +31,28 @@ const pageLabel = computed(() => {
   return `${studio.sheetIndex + 1}/${practice.sheets.length}`
 })
 
+function fallbackSheetPath() {
+  const current = practice.tasks.find((item) => item.id === practice.task.id)
+  if (!current) return '/'
+  const components = Array.isArray(current.components) ? current.components : []
+  if (current.sheet || components.includes('sheet')) return `/sheet/${current.id}`
+  return '/'
+}
+
 async function syncTaskFromRoute() {
+  if (!practice.ready) return false
   const id = String(route.params.taskId || '')
-  if (id && id !== practice.task.id) await openTask(id)
-  else await ensureToday()
+  if (!id) {
+    router.replace(fallbackSheetPath())
+    return false
+  }
+  const ok = await openTask(id)
+  if (!ok) {
+    toast('没有找到这个任务')
+    router.replace('/')
+    return false
+  }
+  return true
 }
 
 async function loadStrokes() {
@@ -59,7 +77,13 @@ function pick() {
 }
 
 async function onFiles(event) {
-  const added = await addFiles('sheet', event.target.files)
+  const files = event.target.files
+  const id = String(route.params.taskId || practice.task.id)
+  if (!(await syncTaskFromRoute())) {
+    event.target.value = ''
+    return
+  }
+  const added = await addFiles('sheet', files, id)
   event.target.value = ''
   if (added.length) studio.sheetIndex = practice.sheets.length - added.length
 }
@@ -165,7 +189,7 @@ onActivated(() => {
   syncTaskFromRoute()
 })
 
-watch(() => route.params.taskId, syncTaskFromRoute, { immediate: true })
+watch(() => [route.params.taskId, practice.ready], syncTaskFromRoute, { immediate: true })
 
 onBeforeRouteLeave(() => {
   hideTools()
@@ -186,6 +210,8 @@ onBeforeRouteLeave(() => {
     </header>
 
     <section v-if="!practice.sheets.length" class="empty">
+      <p>还没有曲谱。拍一张谱或从相册选，练习时它会铺满屏幕。</p>
+      <p class="sub">这是「{{ practice.task.title }}」的曲谱墙</p>
       <button class="btn btn-primary" type="button" @click="pick">上传曲谱</button>
     </section>
 
@@ -267,7 +293,11 @@ onBeforeRouteLeave(() => {
       </div>
     </footer>
 
-    <NotesOverlay :open="studio.notesOpen" @close="studio.notesOpen = false" />
+    <NotesOverlay
+      :open="studio.notesOpen"
+      :task-id="String(route.params.taskId || practice.task.id)"
+      @close="studio.notesOpen = false"
+    />
     <input ref="fileRef" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
   </main>
 </template>
@@ -337,6 +367,16 @@ onBeforeRouteLeave(() => {
   color: var(--muted);
   text-align: center;
   line-height: 1.6;
+}
+
+.empty p {
+  margin: 0;
+  max-width: 280px;
+}
+
+.empty .sub {
+  color: var(--paper);
+  font-weight: 650;
 }
 
 .bottom {

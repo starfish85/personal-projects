@@ -1,51 +1,62 @@
 <script setup>
-import { computed, onActivated, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PhotoViewer from '../components/PhotoViewer.vue'
 import {
   addCheckins,
+  assetDayKey,
   checkinsOn,
   dayComplete,
+  ensureToday,
   hasJournal,
   journalPhotosOn,
   listDays,
   loadCheckins,
   loadJournals,
   practice,
+  removeAsset,
   removeCheckin,
   removeJournalPhoto,
   subtaskDone,
-  tasksOnDate,
+  helperImagesForTask,
+  taskHasGallery,
+  taskLogsImages,
+  tasksForCalendarDate,
   toggleCheckOnDate,
   toggleSubtask,
 } from '../stores/practice'
-import { confirmDialog, toast } from '../stores/ui'
-import { formatClock, formatDayTitle, localDateKey, monthGrid } from '../utils/date'
+import { confirmDialog } from '../stores/ui'
+import { dateMode, formatClock, formatDayTitle, localDateKey, monthGrid } from '../utils/date'
 
 defineOptions({ name: 'Calendar' })
 
 const router = useRouter()
 const route = useRoute()
-const today = localDateKey()
+const today = computed(() => practice.date || localDateKey())
 const cursor = ref(new Date())
-const selected = ref(String(route.query.date || today))
+const selected = ref(String(route.query.date || localDateKey()))
 const daysByTask = ref({})
 const viewerOpen = ref(false)
 const startIndex = ref(0)
 const viewerPhotos = ref([])
 const fileRef = ref(null)
 const uploadTaskId = ref('')
+const viewerTaskId = ref(null)
+const viewerKind = ref('checkin')
 
 const year = computed(() => cursor.value.getFullYear())
 const month = computed(() => cursor.value.getMonth())
 const title = computed(() => `${year.value}年${month.value + 1}月`)
 const cells = computed(() => monthGrid(year.value, month.value))
-const tasks = computed(() => practice.tasks)
-const selectedTasks = computed(() => tasksOnDate(selected.value))
-const isFuture = computed(() => selected.value > today)
-const isToday = computed(() => selected.value === today)
-const canEditJournal = computed(() => selected.value <= today)
-const canCompleteTasks = computed(() => selected.value === today)
+const selectedTasks = computed(() => tasksForCalendarDate(selected.value, daysByTask.value))
+const mode = computed(() => dateMode(selected.value, today.value))
+const isFuture = computed(() => mode.value === 'future')
+const isToday = computed(() => mode.value === 'today')
+const canEditJournal = computed(() => mode.value !== 'future')
+const canCompleteTasks = computed(() => mode.value === 'today')
+const viewerDeletable = computed(() =>
+  viewerKind.value === 'journal' ? canEditJournal.value : isToday.value,
+)
 
 function record(taskId, date) {
   return daysByTask.value[taskId]?.[date] || null
@@ -72,16 +83,43 @@ function statusLine(task) {
   return '未完成'
 }
 
+function tasksForCell(dateKey) {
+  return tasksForCalendarDate(dateKey, daysByTask.value)
+}
+
 function allDoneOn(dateKey) {
-  const rows = tasksOnDate(dateKey)
+  const rows = tasksForCell(dateKey)
   if (!rows.length) return false
   return rows.every((task) => status(dateKey, task))
 }
 
 const selectedAllDone = computed(() => allDoneOn(selected.value))
+const detailRef = ref(null)
+const summaryTitle = computed(() => {
+  if (isFuture.value) return '这天要做的'
+  if (isToday.value) return '这天的日课'
+  return '这天做了什么'
+})
+const summaryMeta = computed(() => {
+  const rows = selectedTasks.value
+  if (!rows.length) return ''
+  if (isFuture.value) return `${rows.length} 项`
+  const done = rows.filter((task) => status(selected.value, task)).length
+  return `${done}/${rows.length} 已完成`
+})
+const emptySummary = computed(() => {
+  if (isFuture.value) return '这天还没有安排任务'
+  if (isToday.value) return '今天没有安排的日课'
+  return '这天没有任务记录'
+})
 
 function photosFor(taskId) {
-  return checkinsOn(selected.value, taskId)
+  const checkins = checkinsOn(selected.value, taskId)
+  const task = practice.tasks.find((item) => item.id === taskId)
+  if (!taskLogsImages(task)) return checkins
+  const extras = helperImagesForTask(taskId).filter((item) => assetDayKey(item) === selected.value)
+  const seen = new Set(checkins.map((item) => item.id))
+  return [...checkins, ...extras.filter((item) => !seen.has(item.id))]
 }
 
 function mapDays(rows) {
@@ -112,8 +150,17 @@ function shiftMonth(delta) {
 
 function pick(dateKey) {
   if (!dateKey) return
+  const nextMode = dateMode(dateKey, today.value)
+  if (dateKey === selected.value) {
+    if (nextMode === 'future') addTaskForSelected()
+    else router.push(`/journal/${dateKey}`)
+    return
+  }
   selected.value = dateKey
   router.replace({ path: '/calendar', query: { date: dateKey } })
+  nextTick(() => {
+    detailRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
 }
 
 function addTaskForSelected() {
@@ -126,6 +173,7 @@ function openGallery(taskId) {
 }
 
 function openTask(taskId) {
+  if (!isToday.value) return
   router.push(`/task/${taskId}`)
 }
 
@@ -148,9 +196,6 @@ async function onFiles(event) {
   await refresh()
 }
 
-const viewerTaskId = ref(null)
-const viewerKind = ref('checkin')
-
 function openPhoto(taskId, index) {
   viewerKind.value = 'checkin'
   viewerTaskId.value = taskId
@@ -168,14 +213,19 @@ function openJournalPhoto(index) {
 }
 
 async function onDelete(id) {
+  if (viewerKind.value === 'checkin' && !isToday.value) return
   const ok = await confirmDialog({
     title: '删除这张图？',
-    copy: '删光之后这一天这项任务会变成未完成。',
+    copy:
+      viewerKind.value === 'journal'
+        ? '从这天的日记里拿掉这张图。'
+        : '删光之后这一天这项任务会变成未完成。',
     ok: '删除',
     danger: true,
   })
   if (!ok) return
   if (viewerKind.value === 'journal') await removeJournalPhoto(id)
+  else if (viewerPhotos.value.find((item) => item.id === id)?.role === 'helper-image') await removeAsset(id)
   else await removeCheckin(id)
   await refresh()
   viewerPhotos.value =
@@ -195,8 +245,13 @@ async function toggleCheckForSelected(task) {
   await refresh()
 }
 
-onMounted(refresh)
-onActivated(refresh)
+async function boot() {
+  await ensureToday()
+  await refresh()
+}
+
+onMounted(boot)
+onActivated(boot)
 
 watch(
   () => route.query.date,
@@ -205,16 +260,6 @@ watch(
     selected.value = String(date)
     const [y, m] = selected.value.split('-').map(Number)
     if (y && m) cursor.value = new Date(y, m - 1, 1)
-  },
-  { immediate: true },
-)
-
-watch(
-  () => route.query.saved,
-  (saved) => {
-    if (!saved) return
-    toast(`已保存到 ${selected.value}`)
-    router.replace({ path: '/calendar', query: { date: selected.value } })
   },
   { immediate: true },
 )
@@ -248,9 +293,9 @@ watch(
           @click="pick(cell)"
         >
           <span v-if="cell">{{ Number(cell.slice(8)) }}</span>
-          <div v-if="cell && tasksOnDate(cell).length" class="bar" :class="{ full: allDoneOn(cell) }">
+          <div v-if="cell && tasksForCell(cell).length" class="bar" :class="{ full: allDoneOn(cell) }">
             <i
-              v-for="task in tasksOnDate(cell)"
+              v-for="task in tasksForCell(cell)"
               :key="task.id"
               class="seg"
               :style="{ background: status(cell, task) ? task.color : 'transparent' }"
@@ -260,7 +305,7 @@ watch(
       </div>
     </section>
 
-    <section class="detail">
+    <section ref="detailRef" class="detail">
       <h2>{{ formatDayTitle(selected) }}</h2>
       <template>
         <div class="day-actions">
@@ -269,88 +314,109 @@ watch(
             {{ journalExists ? '打开日记' : '写日记' }}
           </button>
         </div>
-        <p v-if="isFuture" class="muted">未来日期只做计划，明天到来后再执行。</p>
-        <p v-else-if="!isToday" class="muted">过去日期用于回看和补写日记，暂不补打卡。</p>
+        <p v-if="isFuture" class="muted">点这一天来安排任务。到了那天再执行。</p>
+        <p v-else-if="!isToday" class="muted">点这一天来写日记。下面是这天做了什么。</p>
+        <p v-else class="muted">点今天来写日记。下面是今天要做的日课。</p>
+        <div class="summary-head">
+          <h3>{{ summaryTitle }}</h3>
+          <span v-if="summaryMeta">{{ summaryMeta }}</span>
+        </div>
         <p v-if="selectedAllDone && selectedTasks.length" class="ok">已完成</p>
-        <p v-if="!selectedTasks.length" class="muted">这天还没有安排任务</p>
+        <p v-if="!selectedTasks.length" class="muted">{{ emptySummary }}</p>
         <div v-for="task in selectedTasks" :key="task.id" class="block">
           <div class="task-head">
             <p class="label">
               <i :style="{ background: task.color }" />
               {{ task.title }}
+              <em v-if="task.archived">已归档</em>
+              <em v-else-if="task.paused">已暂停</em>
             </p>
             <span :class="status(selected, task) ? 'mini-ok' : 'mini-muted'">{{ statusLine(task) }}</span>
           </div>
-          <template v-if="task.subtasks?.length">
-            <div class="subtasks">
+
+          <div v-if="task.subtasks?.length" class="subtasks">
+            <template v-if="isToday">
               <button
                 v-for="subtask in task.subtasks"
                 :key="subtask.id"
                 type="button"
                 class="subtask"
                 :class="{ on: subDone(task.id, subtask.id) }"
-                :disabled="!canCompleteTasks"
                 @click="toggleSubOnDate(task, subtask)"
               >
                 <span>{{ subtask.title }}</span>
                 <i />
               </button>
-            </div>
-            <button v-if="isFuture" type="button" class="open inline" @click="editTask(task.id)">调整安排</button>
-            <button v-else-if="isToday" type="button" class="open inline" @click="openTask(task.id)">打开任务</button>
-          </template>
-          <template v-else-if="task.completion === 'photo-log'">
-            <p v-if="isFuture && !record(task.id, selected)?.count" class="muted">已安排到这一天</p>
-            <template v-if="record(task.id, selected)?.count">
-              <p class="ok">已打卡 · {{ record(task.id, selected).count }} 张</p>
-              <div class="thumbs">
-                <button
-                  v-for="(item, i) in photosFor(task.id)"
-                  :key="item.id"
-                  type="button"
-                  class="thumb"
-                  @click="openPhoto(task.id, i)"
-                >
-                  <img :src="item.thumbUrl" alt="" />
-                </button>
+            </template>
+            <template v-else>
+              <div
+                v-for="subtask in task.subtasks"
+                :key="subtask.id"
+                class="subtask"
+                :class="{ on: subDone(task.id, subtask.id) }"
+              >
+                <span>{{ subtask.title }}</span>
+                <i />
               </div>
-              <button type="button" class="open inline" @click="openGallery(task.id)">查看作品墙</button>
             </template>
-            <button v-if="isToday" type="button" class="open inline" @click="pickPhoto(task.id)">上传图片</button>
-            <button v-else-if="isFuture" type="button" class="open inline" @click="editTask(task.id)">调整安排</button>
-            <p v-else-if="!isFuture" class="muted">未完成</p>
+          </div>
+
+          <template v-if="photosFor(task.id).length">
+            <p class="ok">已打卡 · {{ record(task.id, selected)?.count }} 张</p>
+            <div class="thumbs">
+              <button
+                v-for="(item, i) in photosFor(task.id)"
+                :key="item.id"
+                type="button"
+                class="thumb"
+                @click="openPhoto(task.id, i)"
+              >
+                <img :src="item.thumbUrl" alt="" />
+              </button>
+            </div>
           </template>
-          <template v-else-if="task.completion === 'counter'">
-            <p v-if="isFuture && !record(task.id, selected)?.count" class="muted">已安排到这一天</p>
-            <template v-if="record(task.id, selected)?.count">
-              <p class="digits">
-                {{ record(task.id, selected).count }}
-                <span>/ {{ record(task.id, selected).target ?? task.target }} 遍</span>
-              </p>
-              <p v-if="status(selected, task)" class="ok">已完成</p>
-              <p v-else class="muted">未到目标</p>
-              <p v-if="record(task.id, selected).completedAt" class="muted">
-                {{ formatClock(record(task.id, selected).completedAt) }}
-              </p>
-            </template>
-            <button v-if="isToday" type="button" class="open inline" @click="openTask(task.id)">打开任务</button>
-            <button v-else-if="isFuture" type="button" class="open inline" @click="editTask(task.id)">调整安排</button>
-            <p v-else-if="!isFuture" class="muted">未完成</p>
+
+          <template v-else-if="task.completion === 'counter' && record(task.id, selected)?.count">
+            <p class="digits">
+              {{ record(task.id, selected).count }}
+              <span>/ {{ record(task.id, selected).target ?? task.target }} 遍</span>
+            </p>
+            <p v-if="status(selected, task)" class="ok">已完成</p>
+            <p v-else class="muted">未到目标</p>
+            <p v-if="record(task.id, selected).completedAt" class="muted">
+              {{ formatClock(record(task.id, selected).completedAt) }}
+            </p>
           </template>
-          <template v-else>
-            <button
-              v-if="task.completion === 'check'"
-              class="day-check"
-              type="button"
-              :class="{ on: status(selected, task) }"
-              :disabled="!canCompleteTasks"
-              @click="toggleCheckForSelected(task)"
-            >
-              <span>{{ canCompleteTasks ? (status(selected, task) ? '取消完成' : '完成今天') : statusLine(task) }}</span>
-              <i />
-            </button>
-            <p v-else class="muted">{{ statusLine(task) }}</p>
-          </template>
+
+          <button
+            v-if="isToday && task.completion === 'check' && !task.subtasks?.length"
+            class="day-check"
+            type="button"
+            :class="{ on: status(selected, task) }"
+            @click="toggleCheckForSelected(task)"
+          >
+            <span>{{ status(selected, task) ? '取消完成' : '完成今天' }}</span>
+            <i />
+          </button>
+
+          <button v-if="isToday" type="button" class="open inline" @click="openTask(task.id)">打开任务</button>
+          <button
+            v-if="isToday && task.completion === 'photo-log'"
+            type="button"
+            class="open inline"
+            @click="pickPhoto(task.id)"
+          >
+            上传图片
+          </button>
+          <button v-if="isFuture" type="button" class="open inline" @click="editTask(task.id)">修改任务</button>
+          <button
+            v-if="taskHasGallery(task)"
+            type="button"
+            class="open inline"
+            @click="openGallery(task.id)"
+          >
+            查看作品墙
+          </button>
         </div>
 
         <div v-if="canEditJournal" class="block">
@@ -378,6 +444,7 @@ watch(
       :open="viewerOpen"
       :photos="viewerPhotos"
       :start-index="startIndex"
+      :deletable="viewerDeletable"
       title="那天的图"
       @close="viewerOpen = false"
       @delete="onDelete"
@@ -498,6 +565,26 @@ watch(
   font-size: var(--fs-md);
 }
 
+.summary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.summary-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.summary-head span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .day-actions {
   display: flex;
   flex-wrap: wrap;
@@ -506,9 +593,15 @@ watch(
 }
 
 .block {
-  margin-top: 16px;
+  margin-top: 12px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+
+.summary-head + .ok,
+.summary-head + .muted,
+.summary-head + .block {
+  margin-top: 8px;
 }
 
 .task-head {
@@ -533,6 +626,13 @@ watch(
   height: 6px;
   border-radius: 99px;
   display: inline-block;
+}
+
+.label em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .mini-ok,
@@ -634,6 +734,10 @@ watch(
   min-height: 42px;
   color: var(--text);
   text-align: left;
+}
+
+div.subtask {
+  cursor: default;
 }
 
 .subtask i {

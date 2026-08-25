@@ -2,7 +2,13 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PhotoViewer from '../components/PhotoViewer.vue'
-import { checkinsForTask, practice, toggleFeaturedCheckin } from '../stores/practice'
+import {
+  assetDayKey,
+  galleryListItem,
+  galleryPhotosForTask,
+  practice,
+  toggleFeaturedCheckin,
+} from '../stores/practice'
 
 defineOptions({ name: 'Gallery' })
 
@@ -13,28 +19,24 @@ const startIndex = ref(0)
 
 const taskId = computed(() => String(route.params.taskId || ''))
 const task = computed(() => practice.tasks.find((item) => item.id === taskId.value) || null)
-const rows = computed(() => checkinsForTask(taskId.value))
+const rows = computed(() => galleryPhotosForTask(taskId.value))
 const featuredCount = computed(() => rows.value.filter((item) => item.featured).length)
 const listMode = computed(() => !taskId.value)
-function hasImageWall(item) {
-  const components = Array.isArray(item.components) ? item.components : []
-  return item.completion === 'photo-log' || components.includes('images')
-}
 
 const taskCards = computed(() =>
   practice.tasks
     .map((item) => {
-      const rowsForTask = checkinsForTask(item.id)
+      const rowsForTask = galleryPhotosForTask(item.id)
       return {
         task: item,
         rows: rowsForTask,
         latest: rowsForTask[0] || null,
       }
     })
-    .filter((item) => hasImageWall(item.task))
+    .filter((item) => galleryListItem(item.task))
     .sort(
       (a, b) =>
-        String(b.rows[0]?.date || '').localeCompare(String(a.rows[0]?.date || '')) ||
+        String(assetDayKey(b.latest) || '').localeCompare(String(assetDayKey(a.latest) || '')) ||
         (a.task.order ?? 0) - (b.task.order ?? 0),
     ),
 )
@@ -42,7 +44,7 @@ const taskCards = computed(() =>
 const months = computed(() => {
   const groups = {}
   for (const item of rows.value) {
-    const key = String(item.date || '').slice(0, 7)
+    const key = String(assetDayKey(item) || item.createdAt || '').slice(0, 7)
     if (!groups[key]) groups[key] = []
     groups[key].push(item)
   }
@@ -64,8 +66,16 @@ function back() {
   router.push('/gallery')
 }
 
-function shortDate(date) {
-  return String(date || '').slice(5)
+function shortDate(value) {
+  const key = String(value || '').slice(0, 10)
+  return key.length >= 10 ? key.slice(5) : key
+}
+
+function cardCopy(item) {
+  const status = item.task.archived ? '已归档' : item.task.paused ? '已暂停' : ''
+  if (!item.rows.length) return status || '还没有图片'
+  const photos = `${item.rows.length} 张图片 · 最近 ${shortDate(assetDayKey(item.latest))}`
+  return status ? `${status} · ${photos}` : photos
 }
 
 async function markFeatured(id) {
@@ -101,14 +111,12 @@ function openTaskWall(id) {
           </span>
           <span>
             <strong>{{ item.task.title }}</strong>
-            <em>
-              {{ item.rows.length ? `${item.rows.length} 张图片 · 最近 ${shortDate(item.latest.date)}` : '还没有图片' }}
-            </em>
+            <em>{{ cardCopy(item) }}</em>
           </span>
         </button>
       </div>
       <div v-else class="empty-state">
-        <p>还没有可回看的图片墙。</p>
+        <p>还没有可回看的图片墙。画画或健身的打卡图会出现在这里。</p>
         <button type="button" @click="router.push('/')">回首页</button>
       </div>
     </template>
@@ -128,10 +136,16 @@ function openTaskWall(id) {
             <button type="button" class="thumb" @click="openAt(rows.indexOf(item))">
               <img :src="item.thumbUrl" alt="" />
             </button>
-            <button type="button" class="mark" :class="{ on: item.featured }" @click="markFeatured(item.id)">
+            <button
+              v-if="item.role === 'checkin'"
+              type="button"
+              class="mark"
+              :class="{ on: item.featured }"
+              @click="markFeatured(item.id)"
+            >
               {{ item.featured ? '代表作' : '标记代表作' }}
             </button>
-            <p class="date">{{ shortDate(item.date) }}</p>
+            <p class="date">{{ shortDate(assetDayKey(item)) }}</p>
           </article>
         </div>
       </section>

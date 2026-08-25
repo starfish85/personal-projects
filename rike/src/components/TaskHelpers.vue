@@ -2,11 +2,17 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  addCheckins,
   addHelperImages,
+  checkinsOn,
+  helperImagesForTask,
   practice,
   removeAsset,
+  removeCheckin,
   saveTaskNote,
   taskHasComponent,
+  taskHasGallery,
+  taskLogsImages,
 } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 
@@ -27,6 +33,14 @@ const components = computed(() => ({
   sheet: taskHasComponent('sheet'),
   notes: taskHasComponent('notes'),
 }))
+const imageCheckin = computed(() => taskLogsImages(practice.task))
+const panelImages = computed(() => {
+  if (!imageCheckin.value) return practice.helperImages
+  const today = checkinsOn(practice.date, practice.task.id)
+  const leftovers = helperImagesForTask(practice.task.id)
+  const seen = new Set(today.map((item) => item.id))
+  return [...today, ...leftovers.filter((item) => !seen.has(item.id))]
+})
 
 const timerLabel = computed(() => {
   const mins = Math.floor(timerSeconds.value / 60)
@@ -54,20 +68,24 @@ function pick() {
 }
 
 async function onFiles(event) {
-  const added = await addHelperImages(event.target.files)
+  const files = event.target.files
+  const added = imageCheckin.value
+    ? await addCheckins(files, null, practice.task.id)
+    : await addHelperImages(files, practice.task.id)
   event.target.value = ''
-  if (added.length) toast('图片已插入')
+  if (added.length) toast(imageCheckin.value ? '已记下今天的打卡图' : '图片已插入')
 }
 
-async function deleteImage(id) {
+async function deleteImage(item) {
   const ok = await confirmDialog({
     title: '删除这张图片？',
-    copy: '这只会删掉本机图片，不影响已同步的文字和任务记录。',
+    copy: item.role === 'checkin' ? '删掉后日历和作品墙里也会少一张。' : '这只会删掉本机图片，不影响已同步的文字和任务记录。',
     ok: '删除',
     danger: true,
   })
   if (!ok) return
-  await removeAsset(id)
+  if (item.role === 'checkin') await removeCheckin(item.id)
+  else await removeAsset(item.id)
 }
 
 function tick() {
@@ -180,22 +198,38 @@ onBeforeUnmount(() => {
     <article v-if="components.images" class="panel">
       <div class="panel-head">
         <div>
-          <strong>插入图片</strong>
-          <span>{{ practice.helperImages.length ? `${practice.helperImages.length} 张` : '本机保存' }}</span>
+          <strong>{{ imageCheckin ? '图片打卡' : '插入图片' }}</strong>
+          <span>
+            {{
+              panelImages.length
+                ? `${panelImages.length} 张`
+                : imageCheckin
+                  ? '拍一张当今天的打卡'
+                  : '本机保存'
+            }}
+          </span>
         </div>
         <button type="button" class="mini" @click="pick">添加</button>
       </div>
-      <div v-if="practice.helperImages.length" class="image-grid">
+      <div v-if="panelImages.length" class="image-grid">
         <button
-          v-for="item in practice.helperImages"
+          v-for="item in panelImages"
           :key="item.id"
           type="button"
           class="thumb"
-          @click="deleteImage(item.id)"
+          @click="deleteImage(item)"
         >
           <img :src="item.thumbUrl" alt="" />
         </button>
       </div>
+      <button
+        v-if="imageCheckin && taskHasGallery(practice.task)"
+        type="button"
+        class="mini wall"
+        @click="router.push(`/gallery/${practice.task.id}`)"
+      >
+        查看作品墙
+      </button>
       <input ref="fileRef" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
     </article>
 
@@ -280,6 +314,10 @@ onBeforeUnmount(() => {
   background: var(--bg-soft);
   color: var(--amber);
   font-weight: 650;
+}
+
+.wall {
+  margin-top: 12px;
 }
 
 .timer-tabs {

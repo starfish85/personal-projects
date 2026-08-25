@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PhotoViewer from '../components/PhotoViewer.vue'
 import {
   addJournalPhotos,
+  ensureToday,
   journalPhotosOn,
   practice,
   removeJournalPhoto,
@@ -16,21 +17,17 @@ defineOptions({ name: 'Journal' })
 
 const route = useRoute()
 const router = useRouter()
-const today = localDateKey()
+const today = computed(() => practice.date || localDateKey())
 const fileRef = ref(null)
 const text = ref('')
 const viewerOpen = ref(false)
 const startIndex = ref(0)
 let timer = 0
 
-const date = computed(() => {
-  const raw = String(route.params.date || practice.date || today)
-  return raw
-})
-
+const date = computed(() => String(route.params.date || practice.date || localDateKey()))
 const photos = computed(() => journalPhotosOn(date.value))
 const title = computed(() => formatDayTitle(date.value))
-const isFuture = computed(() => date.value > today)
+const isFuture = computed(() => date.value > today.value)
 
 watch(
   date,
@@ -52,6 +49,14 @@ onBeforeUnmount(() => {
   if (isFuture.value) return
   window.clearTimeout(timer)
   saveJournalText(date.value, text.value)
+})
+
+onMounted(() => {
+  ensureToday()
+})
+
+onActivated(() => {
+  ensureToday()
 })
 
 function pick() {

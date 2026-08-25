@@ -61,7 +61,7 @@ export const TASK_TEMPLATES = [
     sheet: false,
     notes: false,
     components: ['counter', 'pomodoro', 'images', 'notes'],
-    summary: '计数器、番茄钟、图片、日记',
+    summary: '计数器、番茄钟、图片打卡、日记',
   },
   {
     id: 'habit',
@@ -109,6 +109,7 @@ export const practice = reactive({
   sheets: [],
   notes: [],
   helperImages: [],
+  helperImageBank: [],
   checkins: [],
   journals: [],
   journalTexts: {},
@@ -184,11 +185,20 @@ function revokeList(list) {
   }
 }
 
-function quotaMessage(error) {
+export function quotaMessage(error) {
   if (error?.name === 'QuotaExceededError') {
     return '手机给这个页面的空间不够了，删几张谱或导出后清理'
   }
-  return error?.message || '保存失败'
+  return '保存失败，请再试一次'
+}
+
+function cloneTaskState(task) {
+  return {
+    ...task,
+    components: Array.isArray(task.components) ? [...task.components] : [],
+    subtasks: Array.isArray(task.subtasks) ? task.subtasks.map((item) => ({ ...item })) : [],
+    repeatWeekdays: Array.isArray(task.repeatWeekdays) ? [...task.repeatWeekdays] : [],
+  }
 }
 
 function syncCompleteFlag() {
@@ -277,6 +287,57 @@ export function taskOnDate(task, date = localDateKey()) {
 
 export function tasksOnDate(date = localDateKey()) {
   return practice.tasks.filter((task) => taskOnDate(task, date))
+}
+
+export function assetDayKey(item) {
+  if (item?.date) return String(item.date).slice(0, 10)
+  if (item?.createdAt) return String(item.createdAt).slice(0, 10)
+  return ''
+}
+
+function dayHasActivity(task, date, daysByTask) {
+  const rec = daysByTask?.[task.id]?.[date]
+  if ((rec?.count || 0) > 0) return true
+  if (rec?.completedAt) return true
+  if (rec?.subtasks && Object.values(rec.subtasks).some(Boolean)) return true
+  if (practice.checkins.some((item) => item.taskId === task.id && item.date === date)) return true
+  if (
+    taskLogsImages(task) &&
+    practice.helperImageBank.some((item) => item.taskId === task.id && assetDayKey(item) === date)
+  ) {
+    return true
+  }
+  return false
+}
+
+function sortCalendarTasks(a, b) {
+  const ae = a.archived || a.paused ? 1 : 0
+  const be = b.archived || b.paused ? 1 : 0
+  if (ae !== be) return ae - be
+  const ap = a.pinned ? 1 : 0
+  const bp = b.pinned ? 1 : 0
+  if (ap !== bp) return bp - ap
+  if (ap && (a.pinnedAt || 0) !== (b.pinnedAt || 0)) return (b.pinnedAt || 0) - (a.pinnedAt || 0)
+  return (a.order ?? 0) - (b.order ?? 0)
+}
+
+export function tasksForCalendarDate(date, daysByTask = {}) {
+  if (date >= localDateKey()) return tasksOnDate(date)
+  return practice.tasks
+    .filter((task) => {
+      if (dayHasActivity(task, date, daysByTask)) return true
+      return !task.longTerm && (task.dueDate || '') === date
+    })
+    .sort(sortCalendarTasks)
+}
+
+export async function assertMutableDay(date) {
+  await ensureToday()
+  const today = localDateKey()
+  const target = date == null || date === '' ? today : date
+  if (target === today) return true
+  toast(target > today ? '还没到这一天，不能打卡。' : '过去日期不能补打卡。')
+  return false
 }
 
 async function saveTasks() {
@@ -459,7 +520,14 @@ export async function addTask({
     order: practice.tasks.length,
   }
   practice.tasks.push(task)
-  await saveTasks()
+  try {
+    await saveTasks()
+  } catch (error) {
+    const index = practice.tasks.findIndex((item) => item.id === task.id)
+    if (index >= 0) practice.tasks.splice(index, 1)
+    toast(quotaMessage(error))
+    return null
+  }
   await refreshTodayMap()
   return task
 }
@@ -467,55 +535,64 @@ export async function addTask({
 export async function updateTask(id, patch) {
   const task = practice.tasks.find((item) => item.id === id)
   if (!task) return false
-  if (patch.title != null) {
-    const name = String(patch.title).trim()
-    if (!name) {
-      toast('名称不能为空')
-      return false
+  const snapshot = cloneTaskState(task)
+  try {
+    if (patch.title != null) {
+      const name = String(patch.title).trim()
+      if (!name) {
+        Object.assign(task, snapshot)
+        toast('名称不能为空')
+        return false
+      }
+      task.title = name
     }
-    task.title = name
-  }
-  if (patch.color) task.color = patch.color
-  if ('template' in patch) task.template = patch.template || 'custom'
-  if ('reminder' in patch) task.reminder = patch.reminder || ''
-  if ('sheet' in patch) task.sheet = Boolean(patch.sheet)
-  if ('notes' in patch) task.notes = Boolean(patch.notes)
-  if ('components' in patch) {
-    task.components = [...new Set((patch.components || []).filter(Boolean))]
-    if (task.completion === 'counter') {
-      task.sheet = task.components.includes('sheet')
-      task.notes = task.components.includes('notes')
+    if (patch.color) task.color = patch.color
+    if ('template' in patch) task.template = patch.template || 'custom'
+    if ('reminder' in patch) task.reminder = patch.reminder || ''
+    if ('sheet' in patch) task.sheet = Boolean(patch.sheet)
+    if ('notes' in patch) task.notes = Boolean(patch.notes)
+    if ('components' in patch) {
+      task.components = [...new Set((patch.components || []).filter(Boolean))]
+      if (task.completion === 'counter') {
+        task.sheet = task.components.includes('sheet')
+        task.notes = task.components.includes('notes')
+      }
     }
-  }
-  if ('dueDate' in patch) task.dueDate = patch.dueDate || localDateKey()
-  if ('longTerm' in patch) task.longTerm = Boolean(patch.longTerm)
-  if ('repeatWeekdays' in patch) {
-    task.repeatWeekdays = [...new Set(Array.isArray(patch.repeatWeekdays) ? patch.repeatWeekdays : [])]
-      .map((item) => Math.round(Number(item)))
-      .filter((item) => item >= 1 && item <= 7)
-  }
-  if ('paused' in patch) task.paused = Boolean(patch.paused)
-  if ('archived' in patch) task.archived = Boolean(patch.archived)
-  if ('subtasks' in patch) {
-    task.subtasks = Array.isArray(patch.subtasks)
-      ? patch.subtasks
-          .map((item) => ({
-            id: item.id || uid('s'),
-            title: String(item.title || '').trim(),
-          }))
-          .filter((item) => item.title)
-      : []
-  }
-  if (patch.target != null && task.completion === 'counter') {
-    const n = Math.round(Number(patch.target))
-    if (!Number.isFinite(n) || n < 1 || n > 999) {
-      toast('目标遍数请填 1 到 999 的整数')
-      return false
+    if ('dueDate' in patch) task.dueDate = patch.dueDate || localDateKey()
+    if ('longTerm' in patch) task.longTerm = Boolean(patch.longTerm)
+    if ('repeatWeekdays' in patch) {
+      task.repeatWeekdays = [...new Set(Array.isArray(patch.repeatWeekdays) ? patch.repeatWeekdays : [])]
+        .map((item) => Math.round(Number(item)))
+        .filter((item) => item >= 1 && item <= 7)
     }
-    task.target = n
+    if ('paused' in patch) task.paused = Boolean(patch.paused)
+    if ('archived' in patch) task.archived = Boolean(patch.archived)
+    if ('subtasks' in patch) {
+      task.subtasks = Array.isArray(patch.subtasks)
+        ? patch.subtasks
+            .map((item) => ({
+              id: item.id || uid('s'),
+              title: String(item.title || '').trim(),
+            }))
+            .filter((item) => item.title)
+        : []
+    }
+    if (patch.target != null && task.completion === 'counter') {
+      const n = Math.round(Number(patch.target))
+      if (!Number.isFinite(n) || n < 1 || n > 999) {
+        Object.assign(task, snapshot)
+        toast('目标遍数请填 1 到 999 的整数')
+        return false
+      }
+      task.target = n
+    }
+    await saveTasks()
+    return true
+  } catch (error) {
+    Object.assign(task, snapshot)
+    toast(quotaMessage(error))
+    return false
   }
-  await saveTasks()
-  return true
 }
 
 export async function removeTask(id) {
@@ -575,13 +652,15 @@ export function subtaskDone(taskId, subtaskId) {
   return Boolean(practice.todayByTask[taskId]?.subtasks?.[subtaskId])
 }
 
-export async function toggleSubtask(taskId, subtaskId, date = localDateKey()) {
+export async function toggleSubtask(taskId, subtaskId, date) {
+  if (!(await assertMutableDay(date))) return false
+  const today = localDateKey()
   const task = practice.tasks.find((item) => item.id === taskId)
   if (!task) return false
   const subtasks = Array.isArray(task.subtasks) ? task.subtasks : []
   const subtask = subtasks.find((item) => item.id === subtaskId)
   if (!subtask) return false
-  const key = `day.${taskId}.${date}`
+  const key = `day.${taskId}.${today}`
   const prev = (await db.kvGet(key)) || {}
   const doneMap = { ...(prev.subtasks || {}) }
   if (doneMap[subtaskId]) delete doneMap[subtaskId]
@@ -629,16 +708,21 @@ export async function ensureToday() {
   if (practice.date !== localDateKey()) await loadToday()
 }
 
+export async function loadAllHelperImages() {
+  const rows = (await db.assetsAll()).filter((item) => item.role === 'helper-image')
+  revokeList(practice.helperImageBank)
+  practice.helperImageBank = rows.map(viewAsset)
+  practice.helperImages = helperImagesForTask(practice.task.id)
+}
+
 export async function loadAssets() {
   const sheets = await db.assetsByRole(practice.task.id, 'sheet')
   const notes = await db.assetsByRole(practice.task.id, 'note')
-  const helperImages = await db.assetsByRole(practice.task.id, 'helper-image')
   revokeList(practice.sheets)
   revokeList(practice.notes)
-  revokeList(practice.helperImages)
   practice.sheets = sheets.map(viewAsset)
   practice.notes = notes.map(viewAsset)
-  practice.helperImages = helperImages.map(viewAsset)
+  await loadAllHelperImages()
   if (studio.sheetIndex >= practice.sheets.length) {
     studio.sheetIndex = Math.max(0, practice.sheets.length - 1)
   }
@@ -726,11 +810,22 @@ async function saveJournalMeta(date) {
 }
 
 export async function saveJournalText(date, text) {
+  if (date > localDateKey()) {
+    toast('未来日期不能写日记')
+    return false
+  }
   practice.journalTexts[date] = text
   await saveJournalMeta(date)
+  return true
 }
 
-export async function addJournalPhotos(fileList, date = practice.date) {
+export async function addJournalPhotos(fileList, date) {
+  const today = localDateKey()
+  const target = date == null || date === '' ? today : date
+  if (target > today) {
+    toast('未来日期不能写日记')
+    return []
+  }
   const files = [...fileList]
   if (!files.length) return []
   let order = practice.journals.reduce((max, item) => Math.max(max, item.order || 0), 0)
@@ -743,7 +838,7 @@ export async function addJournalPhotos(fileList, date = practice.date) {
         id: uid('a'),
         taskId: 'journal',
         role: 'journal',
-        date,
+        date: target,
         name: packed.name,
         mime: packed.mime,
         width: packed.width,
@@ -760,7 +855,7 @@ export async function addJournalPhotos(fileList, date = practice.date) {
     }
   }
   await loadJournals()
-  await saveJournalMeta(date)
+  await saveJournalMeta(target)
   return added
 }
 
@@ -780,9 +875,56 @@ export function checkinsOn(date, taskId) {
 }
 
 export function checkinsForTask(taskId) {
+  if (!taskId) return []
   return practice.checkins
-    .filter((item) => !taskId || item.taskId === taskId)
+    .filter((item) => item.taskId === taskId)
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || b.order - a.order)
+}
+
+export function helperImagesForTask(taskId) {
+  if (!taskId) return []
+  return practice.helperImageBank
+    .filter((item) => item.taskId === taskId)
+    .sort(
+      (a, b) =>
+        String(b.date || b.createdAt || '').localeCompare(String(a.date || a.createdAt || '')) ||
+        (b.order || 0) - (a.order || 0),
+    )
+}
+
+export function taskLogsImages(task) {
+  if (!task) return false
+  const components = Array.isArray(task.components) ? task.components : []
+  if (!components.includes('images')) return false
+  if (task.sheet || components.includes('sheet')) return false
+  return true
+}
+
+export function galleryPhotosForTask(taskId) {
+  const checkins = checkinsForTask(taskId)
+  const task = practice.tasks.find((item) => item.id === taskId)
+  if (!taskLogsImages(task)) return checkins
+  const seen = new Set(checkins.map((item) => item.id))
+  const extras = helperImagesForTask(taskId).filter((item) => !seen.has(item.id))
+  return [...checkins, ...extras].sort(
+    (a, b) =>
+      String(b.date || b.createdAt || '').localeCompare(String(a.date || a.createdAt || '')) ||
+      (b.order || 0) - (a.order || 0),
+  )
+}
+
+export function taskHasGallery(task) {
+  if (!task) return false
+  if (task.completion === 'photo-log' || taskLogsImages(task)) return true
+  return checkinsForTask(task.id).length > 0
+}
+
+export function galleryListItem(task) {
+  if (!task) return false
+  const photos = galleryPhotosForTask(task.id)
+  if (photos.length > 0) return true
+  if (task.archived || task.paused) return false
+  return task.completion === 'photo-log' || taskLogsImages(task)
 }
 
 export async function toggleFeaturedCheckin(id) {
@@ -823,8 +965,10 @@ async function syncPhotoDay(taskId, date) {
   notifyCloud()
 }
 
-export async function addCheckins(fileList, date = practice.date, taskId = practice.task.id) {
-  await ensureToday()
+export async function addCheckins(fileList, date, taskId) {
+  if (!(await assertMutableDay(date))) return []
+  const today = localDateKey()
+  const targetTask = taskId == null || taskId === '' ? practice.task.id : taskId
   const files = [...fileList]
   if (!files.length) return []
   let order = practice.checkins.reduce((max, item) => Math.max(max, item.order || 0), 0)
@@ -835,9 +979,9 @@ export async function addCheckins(fileList, date = practice.date, taskId = pract
       order += 1
       const asset = {
         id: uid('a'),
-        taskId,
+        taskId: targetTask,
         role: 'checkin',
-        date,
+        date: today,
         name: packed.name,
         mime: packed.mime,
         width: packed.width,
@@ -856,21 +1000,25 @@ export async function addCheckins(fileList, date = practice.date, taskId = pract
     }
   }
   await loadCheckins()
-  await syncPhotoDay(taskId, date)
+  await syncPhotoDay(targetTask, today)
   return added
 }
 
-export async function addHelperImages(fileList) {
-  const added = await addFiles('helper-image', fileList)
-  if (added.length) await loadAssets()
-  return added
+export async function addHelperImages(fileList, taskId) {
+  return addFiles('helper-image', fileList, taskId)
 }
 
 export async function removeCheckin(id) {
   const item = practice.checkins.find((row) => row.id === id)
+  await ensureToday()
+  if (item?.date && item.date !== localDateKey()) {
+    toast('只能改今天的打卡图。')
+    return false
+  }
   await db.assetDelete(id)
   await loadCheckins()
   if (item?.date && item?.taskId) await syncPhotoDay(item.taskId, item.date)
+  return true
 }
 
 export async function bootPractice() {
@@ -891,6 +1039,7 @@ export async function bootPractice() {
 }
 
 export async function bump(delta) {
+  // 无 date 参数：先切到本地今天，再写 day.{task}.{today}
   await ensureToday()
   practice.count = Math.max(0, practice.count + delta)
   syncCompleteFlag()
@@ -911,6 +1060,7 @@ export async function setTarget(n) {
 }
 
 export async function toggleCheck() {
+  // 无 date 参数：先切到本地今天，再写当天完成态
   await ensureToday()
   if (practice.completedAt) {
     practice.count = 0
@@ -922,10 +1072,12 @@ export async function toggleCheck() {
   await saveDay()
 }
 
-export async function toggleCheckOnDate(taskId, date = localDateKey()) {
+export async function toggleCheckOnDate(taskId, date) {
+  if (!(await assertMutableDay(date))) return false
+  const today = localDateKey()
   const task = practice.tasks.find((item) => item.id === taskId)
   if (!task || task.completion !== 'check') return false
-  const key = `day.${taskId}.${date}`
+  const key = `day.${taskId}.${today}`
   const prev = (await db.kvGet(key)) || {}
   const completed = Boolean(prev.completedAt) || prev.count > 0
   await db.kvSet(key, {
@@ -940,10 +1092,12 @@ export async function toggleCheckOnDate(taskId, date = localDateKey()) {
   return true
 }
 
-export async function addFiles(role, fileList) {
+export async function addFiles(role, fileList, taskId) {
+  const id = taskId || practice.task.id
   const files = [...fileList]
   if (!files.length) return []
-  const existing = role === 'sheet' ? practice.sheets : practice.notes
+  const existing =
+    role === 'sheet' ? practice.sheets : role === 'note' ? practice.notes : practice.helperImages
   let order = existing.reduce((max, item) => Math.max(max, item.order || 0), 0)
   const added = []
 
@@ -953,7 +1107,7 @@ export async function addFiles(role, fileList) {
       order += 1
       const asset = {
         id: uid('a'),
-        taskId: practice.task.id,
+        taskId: id,
         role,
         name: packed.name,
         mime: packed.mime,

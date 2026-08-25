@@ -2,7 +2,8 @@
 import { onActivated, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import NotesOverlay from '../components/NotesOverlay.vue'
-import { addFiles, ensureToday, openTask, practice } from '../stores/practice'
+import { addFiles, openTask, practice } from '../stores/practice'
+import { toast } from '../stores/ui'
 
 const router = useRouter()
 const route = useRoute()
@@ -10,10 +11,28 @@ const fileRef = ref(null)
 const open = ref(false)
 const startIndex = ref(0)
 
+function fallbackNotesPath() {
+  const current = practice.tasks.find((item) => item.id === practice.task.id)
+  if (!current) return '/'
+  const components = Array.isArray(current.components) ? current.components : []
+  if (current.notes || components.includes('notes')) return `/notes/${current.id}`
+  return '/'
+}
+
 async function syncTaskFromRoute() {
+  if (!practice.ready) return false
   const id = String(route.params.taskId || '')
-  if (id && id !== practice.task.id) await openTask(id)
-  else await ensureToday()
+  if (!id) {
+    router.replace(fallbackNotesPath())
+    return false
+  }
+  const ok = await openTask(id)
+  if (!ok) {
+    toast('没有找到这个任务')
+    router.replace('/')
+    return false
+  }
+  return true
 }
 
 function openAt(index) {
@@ -26,12 +45,18 @@ function pick() {
 }
 
 async function onFiles(event) {
-  await addFiles('note', event.target.files)
+  const files = event.target.files
+  const id = String(route.params.taskId || practice.task.id)
+  if (!(await syncTaskFromRoute())) {
+    event.target.value = ''
+    return
+  }
+  await addFiles('note', files, id)
   event.target.value = ''
 }
 
 onActivated(syncTaskFromRoute)
-watch(() => route.params.taskId, syncTaskFromRoute, { immediate: true })
+watch(() => [route.params.taskId, practice.ready], syncTaskFromRoute, { immediate: true })
 </script>
 
 <template>
@@ -43,6 +68,8 @@ watch(() => route.params.taskId, syncTaskFromRoute, { immediate: true })
     </header>
 
     <section v-if="!practice.notes.length" class="empty">
+      <p>把要背的乐理拍下来。练谱时随时能翻，不用离开曲谱。</p>
+      <p class="sub">这是「{{ practice.task.title }}」的笔记</p>
       <button class="btn btn-primary" type="button" @click="pick">上传笔记图片</button>
     </section>
 
@@ -58,7 +85,12 @@ watch(() => route.params.taskId, syncTaskFromRoute, { immediate: true })
       </button>
     </section>
 
-    <NotesOverlay :open="open" :start-index="startIndex" @close="open = false" />
+    <NotesOverlay
+      :open="open"
+      :start-index="startIndex"
+      :task-id="String(route.params.taskId || practice.task.id)"
+      @close="open = false"
+    />
     <input ref="fileRef" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />
   </main>
 </template>
@@ -93,9 +125,24 @@ watch(() => route.params.taskId, syncTaskFromRoute, { immediate: true })
 
 .empty {
   margin-top: 24px;
-  padding: 48px 0;
+  padding: 48px 16px;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.empty p {
+  margin: 0;
+  max-width: 280px;
+}
+
+.empty .sub {
+  color: var(--text);
+  font-weight: 650;
 }
 
 .grid {

@@ -3,7 +3,15 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PracticeCounter from '../components/PracticeCounter.vue'
 import TaskHelpers from '../components/TaskHelpers.vue'
-import { done, practice, setTarget, subtaskDone, taskHasComponent, toggleSubtask } from '../stores/practice'
+import {
+  done,
+  practice,
+  setTarget,
+  subtaskDone,
+  taskHasComponent,
+  taskHasGallery,
+  toggleSubtask,
+} from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 import { downloadBackup, exportBackup, importBackup } from '../utils/backup'
 
@@ -83,6 +91,15 @@ async function onImport(event) {
     </template>
 
     <PracticeCounter v-else-if="taskHasComponent('counter')" variant="hero" @edit-target="openTarget" />
+
+    <button
+      v-if="taskHasGallery(practice.task)"
+      type="button"
+      class="gallery-link"
+      @click="router.push(`/gallery/${practice.task.id}`)"
+    >
+      查看作品墙
+    </button>
 
     <TaskHelpers />
 
@@ -168,6 +185,14 @@ async function onImport(event) {
 
 .idle {
   color: var(--muted);
+}
+
+.gallery-link {
+  display: block;
+  margin: 8px 0 4px;
+  color: var(--amber);
+  font-weight: 650;
+  min-height: 40px;
 }
 
 .subtasks {

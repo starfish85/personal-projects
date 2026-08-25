@@ -77,6 +77,7 @@ function fire(task) {
 }
 
 function due(task, hm, date) {
+  // 只跟当前调度：归档/暂停不提醒；长期按现在的周几。不补发过去，不预告未来。
   if (!taskOnDate(task, date)) return false
   if (!task.reminder) return false
   if (hm < task.reminder) return false

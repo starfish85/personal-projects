@@ -31,6 +31,12 @@ export function weekdayOf(dateKey) {
   return date.getDay() || 7
 }
 
+export function dateMode(date, today = localDateKey()) {
+  if (date > today) return 'future'
+  if (date < today) return 'past'
+  return 'today'
+}
+
 export function formatClock(iso) {
   if (!iso) return ''
   const date = new Date(iso)

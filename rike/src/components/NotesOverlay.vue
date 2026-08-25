@@ -1,12 +1,13 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import SheetViewer from './SheetViewer.vue'
-import { addFiles, practice, removeAsset } from '../stores/practice'
+import { addFiles, openTask, practice, removeAsset } from '../stores/practice'
 import { confirmDialog } from '../stores/ui'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
   startIndex: { type: Number, default: 0 },
+  taskId: { type: String, default: '' },
 })
 
 const emit = defineEmits(['close'])
@@ -35,7 +36,15 @@ function pick() {
 
 async function onFiles(event) {
   const files = event.target.files
-  const added = await addFiles('note', files)
+  const id = props.taskId || practice.task.id
+  if (id && id !== practice.task.id) {
+    const ok = await openTask(id)
+    if (!ok) {
+      event.target.value = ''
+      return
+    }
+  }
+  const added = await addFiles('note', files, id)
   event.target.value = ''
   if (added.length) current.value = practice.notes.length - 1
 }
@@ -62,7 +71,9 @@ async function remove() {
     </header>
 
     <div v-if="!practice.notes.length" class="empty">
-      <button class="btn btn-primary" type="button" @click="pick">添加笔记</button>
+      <p>把要背的乐理拍下来。练谱时随时能翻，不用离开曲谱。</p>
+      <p>这是「{{ practice.task.title }}」的笔记</p>
+      <button class="btn btn-primary" type="button" @click="pick">上传笔记图片</button>
     </div>
 
     <template v-else>
@@ -144,6 +155,11 @@ async function remove() {
   color: var(--muted);
   text-align: center;
   line-height: 1.6;
+}
+
+.empty p {
+  margin: 0;
+  max-width: 280px;
 }
 
 .film {
