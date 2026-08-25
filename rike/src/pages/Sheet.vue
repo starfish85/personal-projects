@@ -41,6 +41,7 @@ function fallbackSheetPath() {
 
 async function syncTaskFromRoute() {
   if (!practice.ready) return false
+  if (route.name !== 'sheet') return false
   const id = String(route.params.taskId || '')
   if (!id) {
     router.replace(fallbackSheetPath())
@@ -49,7 +50,7 @@ async function syncTaskFromRoute() {
   const ok = await openTask(id)
   if (!ok) {
     toast('没有找到这个任务')
-    router.replace('/')
+    await router.replace({ path: '/' })
     return false
   }
   return true

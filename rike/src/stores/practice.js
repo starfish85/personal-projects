@@ -340,9 +340,13 @@ export async function assertMutableDay(date) {
   return false
 }
 
+function clonePlain(value) {
+  return JSON.parse(JSON.stringify(value))
+}
+
 async function saveTasks() {
   practice.tasksUpdatedAt = new Date().toISOString()
-  await db.kvSet('tasks', practice.tasks.map((item) => ({ ...item })))
+  await db.kvSet('tasks', clonePlain(practice.tasks))
   await db.kvSet('tasksUpdatedAt', practice.tasksUpdatedAt)
   notifyCloud()
 }
@@ -434,7 +438,7 @@ async function migrateLocalData() {
     return
   }
   const normalized = tasks.map(normalizeTask)
-  await db.kvSet('tasks', normalized)
+  await db.kvSet('tasks', clonePlain(normalized))
   await db.kvSet('schemaVersion', 3)
 }
 
@@ -445,7 +449,7 @@ async function loadTasks() {
     const guitar = await db.kvGet(`task.${TASK_ID}`)
     const drawing = await db.kvGet(`task.${DRAW_ID}`)
     tasks = guitar || drawing ? defaultTasks(guitar, drawing) : []
-    await db.kvSet('tasks', tasks)
+    await db.kvSet('tasks', clonePlain(tasks))
   }
   const normalized = tasks.map(normalizeTask)
   practice.tasks = normalized
@@ -453,7 +457,7 @@ async function loadTasks() {
   practice.task = practice.tasks.find((item) => item.id === practice.task?.id) || practice.tasks[0] || practice.task
   practice.tasksUpdatedAt = (await db.kvGet('tasksUpdatedAt')) || ''
   if (JSON.stringify(normalized) !== JSON.stringify(tasks)) {
-    await db.kvSet('tasks', normalized)
+    await db.kvSet('tasks', clonePlain(normalized))
   }
 }
 

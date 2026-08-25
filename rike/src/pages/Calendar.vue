@@ -148,15 +148,18 @@ function shiftMonth(delta) {
   cursor.value = new Date(year.value, month.value + delta, 1)
 }
 
+const armed = ref(false)
+
 function pick(dateKey) {
   if (!dateKey) return
   const nextMode = dateMode(dateKey, today.value)
-  if (dateKey === selected.value) {
+  if (dateKey === selected.value && armed.value) {
     if (nextMode === 'future') addTaskForSelected()
     else router.push(`/journal/${dateKey}`)
     return
   }
   selected.value = dateKey
+  armed.value = true
   router.replace({ path: '/calendar', query: { date: dateKey } })
   nextTick(() => {
     detailRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -257,7 +260,10 @@ watch(
   () => route.query.date,
   (date) => {
     if (!date) return
-    selected.value = String(date)
+    const next = String(date)
+    if (next === selected.value) return
+    selected.value = next
+    armed.value = false
     const [y, m] = selected.value.split('-').map(Number)
     if (y && m) cursor.value = new Date(y, m - 1, 1)
   },
@@ -307,7 +313,7 @@ watch(
 
     <section ref="detailRef" class="detail">
       <h2>{{ formatDayTitle(selected) }}</h2>
-      <template>
+      <div>
         <div class="day-actions">
           <button v-if="isFuture" type="button" class="open" @click="addTaskForSelected">安排任务</button>
           <button v-if="canEditJournal" type="button" class="open" @click="router.push(`/journal/${selected}`)">
@@ -435,7 +441,7 @@ watch(
           </div>
           <p v-else-if="!journalExists" class="muted">未写</p>
         </div>
-      </template>
+      </div>
     </section>
 
     <input ref="fileRef" class="hidden" type="file" accept="image/*" multiple @change="onFiles" />

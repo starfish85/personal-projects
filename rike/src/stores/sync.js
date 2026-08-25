@@ -43,7 +43,7 @@ async function mergeTasks(remote) {
   practice.tasksUpdatedAt = remoteAt || new Date().toISOString()
   practice.task =
     list.find((item) => item.id === practice.task.id) || list[0] || practice.task
-  await db.kvSet('tasks', list)
+  await db.kvSet('tasks', JSON.parse(JSON.stringify(list)))
   await db.kvSet('tasksUpdatedAt', practice.tasksUpdatedAt)
 }
 
