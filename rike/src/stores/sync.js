@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import * as db from '../db'
-import { getClient, redirectTo } from '../cloud/client'
+import { getClient, redirectTo, takeAuthHash } from '../cloud/client'
 import { missingAssetTable, syncAssets } from '../cloud/assets'
 import { currentPushOn, registerShellWorker } from '../cloud/push'
 import { localDateKey } from '../utils/date'
@@ -248,17 +248,38 @@ export async function fullSync() {
 }
 
 function clearAuthParams() {
-  const url = `${location.pathname}${location.hash}`
-  history.replaceState({}, '', url)
+  history.replaceState({}, '', `${location.pathname}#/`)
+}
+
+function decodeAuthText(value) {
+  try {
+    return decodeURIComponent(String(value || '').replace(/\+/g, ' '))
+  } catch {
+    return String(value || '')
+  }
 }
 
 async function finishAuthCallback(client) {
   const search = new URLSearchParams(location.search)
-  const hash = new URLSearchParams(String(location.hash || '').replace(/^#\/?/, '').replace(/^#/, ''))
-  const errorDesc = search.get('error_description') || hash.get('error_description')
+  const storedHash = takeAuthHash()
+  const hash = new URLSearchParams(String(storedHash || location.hash || '').replace(/^#/, ''))
+  const errorDesc = search.get('error_description') || hash.get('error_description') || hash.get('error')
   if (errorDesc) {
-    toast(decodeURIComponent(errorDesc.replace(/\+/g, ' ')))
+    toast(decodeAuthText(errorDesc))
     clearAuthParams()
+    return
+  }
+  const accessToken = hash.get('access_token')
+  const refreshToken = hash.get('refresh_token')
+  if (accessToken && refreshToken) {
+    toast('正在登录')
+    const { error } = await client.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    })
+    clearAuthParams()
+    if (error) toast(error.message || '登录失败')
+    else toast('已登录')
     return
   }
   const code = search.get('code')
@@ -268,11 +289,8 @@ async function finishAuthCallback(client) {
     toast('正在登录')
     const { error } = await client.auth.exchangeCodeForSession(window.location.href)
     clearAuthParams()
-    if (error) {
-      toast('点链接登录失败。请回到原来的日课页面，填邮件里的 6 位数字。')
-      return
-    }
-    toast('已登录')
+    if (error) toast(error.message || '登录失败')
+    else toast('已登录')
     return
   }
   if (tokenHash) {
@@ -311,7 +329,7 @@ export async function sendLogin(email) {
     toast(error.message || '发送失败')
     return false
   }
-  toast('邮件已发出。请把 6 位数字填回这个页面，不要换 App 点链接。')
+  toast('邮件已发出。打开邮件，点 Sign in。')
   return true
 }
 

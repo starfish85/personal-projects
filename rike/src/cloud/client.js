@@ -23,6 +23,42 @@ export function setCloudConfig(url, anonKey) {
   bound = ''
 }
 
+const AUTH_HASH_KEY = 'rike.auth.hash'
+let memoryAuthHash = ''
+
+function isAuthHash(hash) {
+  const text = String(hash || '')
+  return (
+    text.includes('access_token=') ||
+    text.includes('refresh_token=') ||
+    text.includes('error_description=') ||
+    text.includes('error=')
+  )
+}
+
+export function captureAuthHash() {
+  const hash = String(location.hash || '')
+  if (!isAuthHash(hash)) return
+  try {
+    sessionStorage.setItem(AUTH_HASH_KEY, hash)
+  } catch {
+    memoryAuthHash = hash
+  }
+  history.replaceState({}, '', `${location.pathname}${location.search}#/`)
+}
+
+export function takeAuthHash() {
+  let stored = memoryAuthHash
+  memoryAuthHash = ''
+  try {
+    stored = sessionStorage.getItem(AUTH_HASH_KEY) || stored
+    sessionStorage.removeItem(AUTH_HASH_KEY)
+  } catch {
+    /* private mode */
+  }
+  return stored || ''
+}
+
 export function getClient() {
   const config = getCloudConfig()
   if (!config) return null
@@ -32,8 +68,8 @@ export function getClient() {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: true,
-        flowType: 'pkce',
+        detectSessionInUrl: false,
+        flowType: 'implicit',
       },
     })
     bound = stamp
