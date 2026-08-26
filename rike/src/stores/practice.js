@@ -221,7 +221,7 @@ export function onLocalChange(fn) {
   cloudHook = fn
 }
 
-function notifyCloud() {
+export function notifyCloud() {
   try {
     cloudHook()
   } catch {
@@ -229,12 +229,19 @@ function notifyCloud() {
   }
 }
 
+function stampTask(task) {
+  task.updatedAt = new Date().toISOString()
+  return task
+}
+
 async function saveDay() {
   const key = `day.${practice.task.id}.${practice.date}`
+  const prev = (await db.kvGet(key)) || {}
   await db.kvSet(key, {
     count: practice.count,
     target: practice.task.target || null,
     completedAt: practice.completedAt,
+    subtasks: prev.subtasks || {},
     updatedAt: new Date().toISOString(),
   })
   await refreshTodayMap()
@@ -405,7 +412,20 @@ export function normalizeTask(task) {
     pinned: Boolean(task.pinned),
     pinnedAt: Number(task.pinnedAt) || 0,
     order: Number.isFinite(task.order) ? task.order : 0,
+    updatedAt: task.updatedAt || '',
   }
+}
+
+export async function applyMergedTasks(list, stamp) {
+  practice.tasks = (Array.isArray(list) ? list : []).map(normalizeTask)
+  sortTasksInPlace()
+  practice.task =
+    practice.tasks.find((item) => item.id === practice.task?.id) ||
+    practice.tasks[0] ||
+    practice.task
+  practice.tasksUpdatedAt = stamp || practice.tasksUpdatedAt || ''
+  await db.kvSet('tasks', clonePlain(practice.tasks))
+  await db.kvSet('tasksUpdatedAt', practice.tasksUpdatedAt)
 }
 
 function sortTasksInPlace() {
@@ -535,6 +555,7 @@ export async function addTask({
     pinnedAt: 0,
     order: practice.tasks.length,
   })
+  stampTask(task)
   practice.tasks.push(task)
   try {
     await saveTasks()
@@ -600,6 +621,7 @@ export async function updateTask(id, patch) {
       task.target = n
     }
     Object.assign(task, normalizeTask(task))
+    stampTask(task)
     await saveTasks()
     return true
   } catch (error) {
@@ -615,6 +637,7 @@ export async function removeTask(id) {
   practice.tasks[index].archived = true
   practice.tasks[index].pinned = false
   practice.tasks[index].pinnedAt = 0
+  stampTask(practice.tasks[index])
   await saveTasks()
   if (practice.task.id === id) {
     practice.task = practice.tasks.find((item) => !item.archived && !item.paused) || practice.tasks[0] || practice.task
@@ -628,6 +651,7 @@ export async function restoreTask(id) {
   if (!task) return false
   task.archived = false
   task.paused = false
+  stampTask(task)
   await saveTasks()
   await refreshTodayMap()
   return true
@@ -643,6 +667,7 @@ export async function pinTask(id) {
     task.pinned = true
     task.pinnedAt = Date.now()
   }
+  stampTask(task)
   sortTasksInPlace()
   await saveTasks()
   return true
@@ -858,6 +883,7 @@ export async function addJournalPhotos(fileList, date) {
         width: packed.width,
         height: packed.height,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         order,
         blob: packed.blob,
         thumbBlob: packed.thumbBlob,
@@ -876,8 +902,10 @@ export async function addJournalPhotos(fileList, date) {
 export async function removeJournalPhoto(id) {
   const item = practice.journals.find((row) => row.id === id)
   await db.assetDelete(id)
+  await db.rememberDeletedAsset(id)
   await loadJournals()
   if (item?.date) await saveJournalMeta(item.date)
+  notifyCloud()
 }
 
 export function checkinsOn(date, taskId) {
@@ -950,6 +978,7 @@ export async function toggleFeaturedCheckin(id) {
     updatedAt: new Date().toISOString(),
   })
   await loadCheckins()
+  notifyCloud()
   return true
 }
 
@@ -1001,6 +1030,7 @@ export async function addCheckins(fileList, date, taskId) {
         width: packed.width,
         height: packed.height,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         order,
         featured: false,
         blob: packed.blob,
@@ -1030,8 +1060,10 @@ export async function removeCheckin(id) {
     return false
   }
   await db.assetDelete(id)
+  await db.rememberDeletedAsset(id)
   await loadCheckins()
   if (item?.date && item?.taskId) await syncPhotoDay(item.taskId, item.date)
+  notifyCloud()
   return true
 }
 
@@ -1068,6 +1100,7 @@ export async function setTarget(n) {
     return false
   }
   practice.task.target = target
+  stampTask(practice.task)
   syncCompleteFlag()
   await saveTasks()
   await saveDay()
@@ -1120,6 +1153,7 @@ export async function addFiles(role, fileList, taskId) {
     try {
       const packed = await compressImage(file)
       order += 1
+      const now = new Date().toISOString()
       const asset = {
         id: uid('a'),
         taskId: id,
@@ -1128,7 +1162,8 @@ export async function addFiles(role, fileList, taskId) {
         mime: packed.mime,
         width: packed.width,
         height: packed.height,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         order,
         blob: packed.blob,
         thumbBlob: packed.thumbBlob,
@@ -1142,12 +1177,15 @@ export async function addFiles(role, fileList, taskId) {
   }
 
   await loadAssets()
+  if (added.length) notifyCloud()
   return added
 }
 
 export async function removeAsset(id) {
   await db.assetDelete(id)
+  await db.rememberDeletedAsset(id)
   await loadAssets()
+  notifyCloud()
 }
 
 export async function reloadAll() {

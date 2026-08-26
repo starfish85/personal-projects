@@ -105,6 +105,25 @@ export function assetDelete(id) {
   })
 }
 
+const TOMBSTONE_KEY = 'assetTombstones'
+
+export async function rememberDeletedAsset(id) {
+  const map = (await kvGet(TOMBSTONE_KEY, {})) || {}
+  map[id] = new Date().toISOString()
+  await kvSet(TOMBSTONE_KEY, map)
+}
+
+export async function assetTombstones() {
+  return (await kvGet(TOMBSTONE_KEY, {})) || {}
+}
+
+export async function clearAssetTombstone(id) {
+  const map = (await kvGet(TOMBSTONE_KEY, {})) || {}
+  if (!(id in map)) return
+  delete map[id]
+  await kvSet(TOMBSTONE_KEY, map)
+}
+
 export function assetsAll() {
   return withTransaction('assets', 'readonly', (tx) => tx.objectStore('assets').getAll()).then(
     (req) => req.result || [],
@@ -118,13 +137,27 @@ export function strokesGet(assetId) {
 }
 
 export function strokesPut(assetId, strokes) {
-  return withTransaction('strokes', 'readwrite', (tx) => {
-    tx.objectStore('strokes').put({
-      assetId,
-      strokes,
-      updatedAt: new Date().toISOString(),
-    })
-  })
+  const now = new Date().toISOString()
+  return openDb().then(
+    (database) =>
+      new Promise((resolve, reject) => {
+        const transaction = database.transaction(['strokes', 'assets'], 'readwrite')
+        transaction.oncomplete = () => resolve()
+        transaction.onerror = () => reject(transaction.error)
+        transaction.objectStore('strokes').put({
+          assetId,
+          strokes,
+          updatedAt: now,
+        })
+        const getReq = transaction.objectStore('assets').get(assetId)
+        getReq.onsuccess = () => {
+          const asset = getReq.result
+          if (!asset) return
+          asset.updatedAt = now
+          transaction.objectStore('assets').put(asset)
+        }
+      }),
+  )
 }
 
 export function strokesAll() {

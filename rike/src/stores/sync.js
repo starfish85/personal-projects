@@ -1,8 +1,11 @@
 import { reactive } from 'vue'
 import * as db from '../db'
 import { getClient, redirectTo } from '../cloud/client'
+import { missingAssetTable, syncAssets } from '../cloud/assets'
+import { currentPushOn, registerShellWorker } from '../cloud/push'
 import { localDateKey } from '../utils/date'
 import {
+  applyMergedTasks,
   normalizeTask,
   onLocalChange,
   practice,
@@ -16,6 +19,8 @@ export const cloud = reactive({
   syncing: false,
   lastAt: '',
   error: '',
+  assetNote: '',
+  push: 'off',
 })
 
 let timer = 0
@@ -31,22 +36,31 @@ function parseDayKey(key) {
   return { taskId, date }
 }
 
-async function mergeTasks(remote) {
-  if (!remote) return
-  const remoteAt = remote.tasks_updated_at || remote.updated_at
-  if (practice.tasksUpdatedAt && later(practice.tasksUpdatedAt, remoteAt) && practice.tasks.length) {
-    return
-  }
-  const list = Array.isArray(remote.tasks) ? remote.tasks.map(normalizeTask) : []
-  if (!list.length && practice.tasks.length) return
-  practice.tasks = list
-  practice.tasksUpdatedAt = remoteAt || new Date().toISOString()
-  practice.task =
-    list.find((item) => item.id === practice.task.id) || list[0] || practice.task
-  await db.kvSet('tasks', JSON.parse(JSON.stringify(list)))
-  await db.kvSet('tasksUpdatedAt', practice.tasksUpdatedAt)
+function taskStamp(task, fallback) {
+  return task?.updatedAt || fallback || ''
 }
 
+async function mergeTasks(remote) {
+  if (!remote) return
+  const remoteList = Array.isArray(remote.tasks) ? remote.tasks.map(normalizeTask) : []
+  const remoteAt = remote.tasks_updated_at || remote.updated_at || ''
+  const localList = practice.tasks || []
+  const localAt = practice.tasksUpdatedAt || ''
+  const map = new Map()
+  for (const task of remoteList) {
+    map.set(task.id, { task, at: taskStamp(task, remoteAt) })
+  }
+  for (const task of localList) {
+    const prev = map.get(task.id)
+    const at = taskStamp(task, localAt)
+    if (!prev || later(at, prev.at)) map.set(task.id, { task, at })
+  }
+  const list = [...map.values()].map((item) => item.task)
+  const stamp = later(localAt, remoteAt) ? localAt || remoteAt : remoteAt || localAt
+  await applyMergedTasks(list, stamp || new Date().toISOString())
+}
+
+// 同一天两边都加过遍数：取较大值，不把两边相加。较新的一次若把计数清零，则以清零为准。
 function mergeDay(local, remote) {
   if (!local) {
     return {
@@ -202,10 +216,29 @@ export async function fullSync() {
   if (!client || !cloud.user || cloud.syncing) return
   cloud.syncing = true
   cloud.error = ''
+  cloud.assetNote = ''
   try {
     await pull(client, cloud.user.id)
     await push(client, cloud.user.id)
+    try {
+      cloud.assetNote = '同步图片'
+      await syncAssets(client, cloud.user.id, ({ done, total, label }) => {
+        cloud.assetNote = total ? `${label} ${done}/${total}` : '同步图片'
+      })
+      await reloadAll()
+    } catch (error) {
+      if (missingAssetTable(error)) {
+        cloud.assetNote = '请执行最新 schema.sql 才能同步图片'
+      } else {
+        throw error
+      }
+    }
     cloud.lastAt = localDateKey() + ' ' + new Date().toTimeString().slice(0, 5)
+    if (cloud.assetNote && cloud.assetNote.startsWith('请执行')) {
+      /* keep the hint */
+    } else {
+      cloud.assetNote = ''
+    }
   } catch (error) {
     cloud.error = error.message || '同步失败'
     toast(error.message || '同步失败')
@@ -253,6 +286,8 @@ export async function signOut() {
 
 export async function bootSync() {
   onLocalChange(scheduleSync)
+  registerShellWorker()
+  cloud.push = await currentPushOn()
   const client = getClient()
   if (!client) return
 

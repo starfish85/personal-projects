@@ -26,6 +26,7 @@ import {
 } from '../stores/practice'
 import SyncBar from '../components/SyncBar.vue'
 import TimePicker from '../components/TimePicker.vue'
+import { cloud } from '../stores/sync'
 import { confirmDialog, toast } from '../stores/ui'
 import {
   backupFileName,
@@ -260,7 +261,7 @@ function openAddFromRoute() {
 }
 
 function refreshBackupNag() {
-  backupNag.value = Boolean(practice.ready) && backupNagNeeded()
+  backupNag.value = Boolean(practice.ready) && !cloud.user && backupNagNeeded()
 }
 
 async function exportBackupNow() {
@@ -288,7 +289,7 @@ onActivated(() => {
   refreshBackupNag()
 })
 watch(() => [route.query.add, route.query.edit], openAddFromRoute)
-watch(() => [practice.ready, practice.lastBackupAt], refreshBackupNag)
+watch(() => [practice.ready, practice.lastBackupAt, cloud.user], refreshBackupNag)
 
 function backToTemplate() {
   if (saving.value) return

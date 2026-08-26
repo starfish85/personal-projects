@@ -5,7 +5,7 @@ import NotesOverlay from '../components/NotesOverlay.vue'
 import PracticeCounter from '../components/PracticeCounter.vue'
 import SheetViewer from '../components/SheetViewer.vue'
 import * as db from '../db'
-import { addFiles, openTask, practice, removeAsset, setInk, studio } from '../stores/practice'
+import { addFiles, notifyCloud, openTask, practice, removeAsset, setInk, studio } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 
 defineOptions({ name: 'Sheet' })
@@ -89,11 +89,17 @@ async function onFiles(event) {
   if (added.length) studio.sheetIndex = practice.sheets.length - added.length
 }
 
+async function persistStrokes(next) {
+  if (!page.value) return
+  await db.strokesPut(page.value.id, next)
+  notifyCloud()
+}
+
 async function commitStroke(stroke) {
   if (!page.value) return
   strokes.value = [...strokes.value, stroke]
   redoStack.value = []
-  await db.strokesPut(page.value.id, strokes.value)
+  await persistStrokes(strokes.value)
 }
 
 async function undo() {
@@ -101,7 +107,7 @@ async function undo() {
   const last = strokes.value[strokes.value.length - 1]
   redoStack.value = [...redoStack.value, last]
   strokes.value = strokes.value.slice(0, -1)
-  await db.strokesPut(page.value.id, strokes.value)
+  await persistStrokes(strokes.value)
 }
 
 async function redo() {
@@ -109,7 +115,7 @@ async function redo() {
   const next = redoStack.value[redoStack.value.length - 1]
   redoStack.value = redoStack.value.slice(0, -1)
   strokes.value = [...strokes.value, next]
-  await db.strokesPut(page.value.id, strokes.value)
+  await persistStrokes(strokes.value)
 }
 
 function onGesture(action) {
@@ -131,7 +137,7 @@ async function clearPage() {
   if (!ok) return
   strokes.value = []
   redoStack.value = []
-  await db.strokesPut(page.value.id, [])
+  await persistStrokes([])
 }
 
 async function removePage(index) {

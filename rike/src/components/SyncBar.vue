@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { getCloudConfig, setCloudConfig } from '../cloud/client'
+import { currentPushOn, enablePush, pushSupported } from '../cloud/push'
 import { cloud, fullSync, sendLogin, signOut } from '../stores/sync'
 import { confirmDialog, toast } from '../stores/ui'
 import { backupFileName, exportAndDownload, importBackup } from '../utils/backup'
@@ -19,10 +20,23 @@ const form = reactive({
 const configured = computed(() => Boolean(getCloudConfig()))
 const status = computed(() => {
   if (!configured.value) return '未配置'
-  if (cloud.syncing) return '同步中'
+  if (cloud.syncing) return cloud.assetNote || '同步中'
+  if (cloud.assetNote) return cloud.assetNote
   if (cloud.user) return cloud.lastAt ? `已同步 ${cloud.lastAt}` : '已登录'
   return '未登录'
 })
+
+const pushLabel = computed(() => {
+  if (cloud.push === 'on') return '到点提醒已开'
+  if (!pushSupported()) return '这台设备不能网页推送'
+  return '打开到点提醒'
+})
+
+async function turnOnPush() {
+  const ok = await enablePush(cloud.user)
+  cloud.push = await currentPushOn()
+  if (ok) cloud.push = 'on'
+}
 
 function saveConfig() {
   if (!form.url.trim() || !form.anonKey.trim()) {
@@ -107,9 +121,18 @@ async function onImport(event) {
           </button>
           <button class="btn btn-ghost" type="button" @click="signOut">退出</button>
         </div>
+        <button
+          class="btn btn-ghost push-btn"
+          type="button"
+          :disabled="cloud.push === 'on' || !pushSupported()"
+          @click="turnOnPush"
+        >
+          {{ pushLabel }}
+        </button>
       </template>
       <p class="hint">
-        云同步只同步文字和进度。曲谱、打卡图、日记图只在这台手机，清缓存会丢。换机前请导出。
+        登录后曲谱、打卡图、日记图会传到云端，换手机登录再同步即可。两台手机同一天都加遍数时取较大值，不会相加。
+        到点提醒：加到主屏幕后点上面的按钮；微信里网页推送一般不可用，页面开着时仍会响。
       </p>
       <div class="actions backup">
         <button class="btn btn-ghost" type="button" :disabled="backupBusy" @click="doExport">
@@ -196,6 +219,10 @@ async function onImport(event) {
 
 .actions.backup {
   grid-template-columns: 1fr 1fr;
+}
+
+.push-btn {
+  width: 100%;
 }
 
 .hint {
