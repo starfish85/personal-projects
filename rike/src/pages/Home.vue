@@ -1,8 +1,8 @@
 <script setup>
-import { onActivated, onMounted, reactive, ref, watch } from 'vue'
+import { onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  DEFAULT_RICH_COMPONENTS,
+  COMPLETION_MODES,
   TASK_COMPONENTS,
   TASK_COLORS,
   TASK_TEMPLATES,
@@ -27,6 +27,12 @@ import {
 import SyncBar from '../components/SyncBar.vue'
 import TimePicker from '../components/TimePicker.vue'
 import { confirmDialog, toast } from '../stores/ui'
+import {
+  backupFileName,
+  backupNagNeeded,
+  dismissBackupNag,
+  exportAndDownload,
+} from '../utils/backup'
 import { localDateKey, weekdayOf } from '../utils/date'
 import { ensureNotifyPermission } from '../utils/remind'
 
@@ -43,6 +49,8 @@ const openId = ref(null)
 const expandedId = ref(null)
 const saving = ref(false)
 const fromCalendarDate = ref('')
+const backupNag = ref(false)
+const menuTask = ref(null)
 const pageRef = ref(null)
 const WEEKDAYS = [
   { value: 1, label: '一' },
@@ -57,10 +65,11 @@ const form = reactive({
   title: '',
   color: TASK_COLORS[0],
   completion: 'check',
+  target: 10,
   reminder: '',
   sheet: false,
   notes: false,
-  template: 'check',
+  template: 'custom',
   components: [],
   subtasks: [],
   dueDate: localDateKey(),
@@ -77,17 +86,38 @@ const drag = reactive({
   tracking: false,
 })
 let skipClick = false
+let longPressTimer = 0
+
+function clearLongPress() {
+  window.clearTimeout(longPressTimer)
+  longPressTimer = 0
+}
+
+function helperIds(list) {
+  return [...(list || [])]
+    .filter((id) => id && id !== 'check' && id !== 'counter')
+    .sort()
+    .join(',')
+}
 
 function applyTemplate(item) {
+  const prev = TASK_TEMPLATES.find((t) => t.id === form.template)
+  const keepCompletion = Boolean(prev && form.completion !== prev.completion)
+  const keepComponents = Boolean(prev && helperIds(form.components) !== helperIds(prev.components))
   form.template = item.id
-  form.completion = item.completion
-  form.sheet = item.sheet
-  form.notes = item.notes
-  form.components = [...(item.components || [])]
+  if (!keepCompletion) {
+    form.completion = item.completion
+    if (item.completion === 'counter') form.target = 10
+  }
+  if (!keepComponents) {
+    form.components = (item.components || []).filter((id) => id !== 'check' && id !== 'counter')
+    form.sheet = form.components.includes('sheet')
+    form.notes = form.components.includes('notes')
+  }
   form.subtasks = []
   form.color = item.color || form.color
   if (!form.title || TASK_TEMPLATES.some((t) => t.defaultTitle === form.title || t.title === form.title)) {
-    form.title = item.defaultTitle || item.title
+    form.title = item.defaultTitle || ''
   }
 }
 
@@ -106,6 +136,13 @@ function openAdd() {
   form.longTerm = false
   form.repeatWeekdays = []
   form.paused = false
+  form.completion = 'check'
+  form.target = 10
+  form.components = []
+  form.sheet = false
+  form.notes = false
+  form.template = 'custom'
+  form.subtasks = []
   applyTemplate(TASK_TEMPLATES.find((item) => item.id === 'custom') || TASK_TEMPLATES[0])
   form.color = TASK_COLORS.find((c) => !practice.tasks.some((t) => t.color === c)) || form.color
   editorStep.value = 'template'
@@ -117,10 +154,13 @@ function openEdit(task) {
   form.title = task.title
   form.color = task.color
   form.completion = task.completion
+  form.target = task.target || 10
   form.reminder = task.reminder || ''
   form.sheet = Boolean(task.sheet)
   form.notes = Boolean(task.notes)
-  form.components = Array.isArray(task.components) ? [...task.components] : []
+  form.components = Array.isArray(task.components)
+    ? task.components.filter((id) => id !== 'check' && id !== 'counter')
+    : []
   form.subtasks = Array.isArray(task.subtasks) ? task.subtasks.map((item) => ({ ...item })) : []
   form.dueDate = task.dueDate || localDateKey()
   form.longTerm = Boolean(task.longTerm)
@@ -162,6 +202,20 @@ function toggleComponent(id) {
   form.notes = next.has('notes')
 }
 
+function setCompletion(kind) {
+  form.completion = kind
+  if (kind === 'counter') {
+    const n = Math.round(Number(form.target))
+    if (!Number.isFinite(n) || n < 1) form.target = 10
+  }
+}
+
+function componentsFromForm() {
+  const ids = form.components.filter((id) => id !== 'check' && id !== 'counter')
+  if (form.completion === 'counter') ids.unshift('counter')
+  return [...new Set(ids)]
+}
+
 function repeatOn(day) {
   return form.repeatWeekdays.includes(day)
 }
@@ -180,11 +234,6 @@ function setLongTerm(on) {
     form.repeatWeekdays = [weekdayOf(form.dueDate)]
   }
   if (!on && was) form.repeatWeekdays = []
-}
-
-function ensureRichComponents() {
-  if (form.completion !== 'counter') return form.components.length ? [...form.components] : []
-  return form.components.length ? form.components : [...DEFAULT_RICH_COMPONENTS]
 }
 
 function finishClose({ calendarDate } = {}) {
@@ -217,14 +266,37 @@ function openAddFromRoute() {
   }
 }
 
+function refreshBackupNag() {
+  backupNag.value = Boolean(practice.ready) && backupNagNeeded()
+}
+
+async function exportBackupNow() {
+  try {
+    const data = await exportAndDownload()
+    toast(`已导出 ${backupFileName(data)}`)
+    refreshBackupNag()
+  } catch {
+    toast('导出失败')
+  }
+}
+
+function skipBackupNag() {
+  dismissBackupNag()
+  backupNag.value = false
+}
+
 onMounted(() => {
   ensureToday()
   openAddFromRoute()
+  refreshBackupNag()
 })
 onActivated(() => {
   ensureToday()
+  refreshBackupNag()
 })
+onBeforeUnmount(clearLongPress)
 watch(() => [route.query.add, route.query.edit], openAddFromRoute)
+watch(() => [practice.ready, practice.lastBackupAt], refreshBackupNag)
 
 function backToTemplate() {
   if (saving.value) return
@@ -237,9 +309,11 @@ function savePayload() {
     color: form.color,
     reminder: form.reminder,
     template: form.template,
+    completion: form.completion,
+    target: form.completion === 'counter' ? Math.round(Number(form.target)) || 10 : form.target,
     sheet: form.sheet,
     notes: form.notes,
-    components: ensureRichComponents(),
+    components: componentsFromForm(),
     subtasks: cleanSubtasks(),
     dueDate: form.dueDate,
     longTerm: form.longTerm,
@@ -255,11 +329,7 @@ async function saveEditor() {
     const calendarDate = fromCalendarDate.value
     const today = localDateKey()
     if (editor.value?.mode === 'add') {
-      const task = await addTask({
-        ...savePayload(),
-        completion: form.completion,
-        target: 10,
-      })
+      const task = await addTask(savePayload())
       if (!task) return
       if (form.reminder) await ensureNotifyPermission()
       const visibleToday = taskOnDate(task, today)
@@ -344,6 +414,39 @@ function closeSwipe() {
   drag.x = 0
 }
 
+function openMenu(task) {
+  clearLongPress()
+  closeSwipe()
+  menuTask.value = task
+}
+
+function closeMenu() {
+  menuTask.value = null
+}
+
+function onMoreClick(task) {
+  consumeSkip()
+  openMenu(task)
+}
+
+function menuEdit() {
+  const task = menuTask.value
+  closeMenu()
+  if (task) openEdit(task)
+}
+
+async function menuPin() {
+  const task = menuTask.value
+  closeMenu()
+  if (task) await pinFromList(task)
+}
+
+async function menuArchive() {
+  const task = menuTask.value
+  closeMenu()
+  if (task) await deleteFromList(task)
+}
+
 function offsetOf(id) {
   if (drag.tracking && drag.id === id) return drag.x
   return openId.value === id ? -ACTION_W : 0
@@ -355,6 +458,7 @@ function dragging(id) {
 
 function onDown(event, task) {
   if (event.pointerType === 'mouse' && event.button !== 0) return
+  if (event.target.closest('.more, .tick, .expand')) return
   if (openId.value && openId.value !== task.id) openId.value = null
   drag.id = task.id
   drag.startX = event.clientX
@@ -362,6 +466,17 @@ function onDown(event, task) {
   drag.x = openId.value === task.id ? -ACTION_W : 0
   drag.axis = null
   drag.tracking = true
+  clearLongPress()
+  longPressTimer = window.setTimeout(() => {
+    longPressTimer = 0
+    if (!drag.tracking || drag.axis === 'x') return
+    skipClick = true
+    drag.tracking = false
+    drag.id = null
+    drag.axis = null
+    drag.x = openId.value === task.id ? -ACTION_W : 0
+    openMenu(task)
+  }, 480)
 }
 
 function onMove(event) {
@@ -371,7 +486,11 @@ function onMove(event) {
   if (!drag.axis) {
     if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
     drag.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'
-    if (drag.axis === 'x') event.currentTarget.setPointerCapture?.(event.pointerId)
+    if (drag.axis === 'x') {
+      clearLongPress()
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+    }
+    if (drag.axis === 'y') clearLongPress()
   }
   if (drag.axis !== 'x') return
   event.preventDefault()
@@ -380,6 +499,7 @@ function onMove(event) {
 }
 
 function onUp() {
+  clearLongPress()
   if (!drag.tracking) return
   const id = drag.id
   const x = drag.x
@@ -405,6 +525,10 @@ function consumeSkip() {
 
 function onPageClick(event) {
   if (!event.target.closest('.swipe')) closeSwipe()
+}
+
+function onCardContextMenu(event) {
+  event.preventDefault()
 }
 
 function onCardClick(task) {
@@ -460,7 +584,7 @@ async function toggleSub(task, subtask) {
 </script>
 
 <template>
-  <main ref="pageRef" class="page" @click="onPageClick" @scroll="closeSwipe">
+  <main ref="pageRef" class="page" @click="onPageClick" @scroll="closeSwipe(); closeMenu()">
     <header class="head">
       <p class="brand">日课</p>
       <div class="head-actions">
@@ -476,6 +600,14 @@ async function toggleSub(task, subtask) {
       </div>
     </header>
     <SyncBar />
+
+    <article v-if="backupNag" class="backup-nag">
+      <p>曲谱和打卡图还没备份，清微信缓存会丢。</p>
+      <div>
+        <button type="button" @click="exportBackupNow">导出</button>
+        <button type="button" class="later" @click="skipBackupNag">稍后</button>
+      </div>
+    </article>
 
     <section class="links">
       <p v-if="!visibleTasks().length" class="empty">{{ emptyCopy() }}</p>
@@ -501,6 +633,7 @@ async function toggleSub(task, subtask) {
           @pointerup="onUp"
           @pointercancel="onUp"
           @click="onCardClick(task)"
+          @contextmenu="onCardContextMenu"
         >
           <i class="dot" :style="{ background: task.color }" />
           <div class="body">
@@ -518,6 +651,14 @@ async function toggleSub(task, subtask) {
             @click.stop="expandedId = expandedId === task.id ? null : task.id"
           >
             {{ expandedId === task.id ? '收起' : '展开' }}
+          </button>
+          <button
+            class="more"
+            type="button"
+            aria-label="更多"
+            @click.stop="onMoreClick(task)"
+          >
+            ⋯
           </button>
           <button
             v-if="task.completion === 'check'"
@@ -560,8 +701,8 @@ async function toggleSub(task, subtask) {
     </button>
 
     <div v-if="editor" class="modal-mask" @click.self="requestClose">
-      <div class="modal-sheet">
-        <template v-if="editorStep === 'template'">
+      <div class="modal-sheet editor-sheet">
+        <div v-if="editorStep === 'template'" class="modal-scroll">
           <h2 class="modal-title">选择模板</h2>
           <p class="modal-copy">模板只预设类型和组件，子任务之后自己添加。</p>
           <div class="template-list">
@@ -580,11 +721,8 @@ async function toggleSub(task, subtask) {
               </span>
             </button>
           </div>
-          <div class="modal-actions">
-            <button class="btn btn-ghost" type="button" :disabled="saving" @click="requestClose">取消</button>
-          </div>
-        </template>
-        <template v-else>
+        </div>
+        <div v-else class="modal-scroll">
           <div class="modal-head">
             <button
               v-if="editor.mode === 'add'"
@@ -658,6 +796,24 @@ async function toggleSub(task, subtask) {
             <em>{{ form.repeatWeekdays.length ? '按选中的周几出现' : '每天出现' }}</em>
           </div>
           <div class="component-block">
+            <p>完成方式</p>
+            <div class="kinds">
+              <button
+                v-for="item in COMPLETION_MODES"
+                :key="item.id"
+                type="button"
+                :class="{ on: form.completion === item.id }"
+                @click="setCompletion(item.id)"
+              >
+                {{ item.title }}
+              </button>
+            </div>
+            <label v-if="form.completion === 'counter'" class="target-field">
+              <span>目标遍数</span>
+              <input v-model="form.target" type="number" min="1" max="999" inputmode="numeric" />
+            </label>
+          </div>
+          <div class="component-block">
             <p>组件</p>
             <div class="kinds">
               <button
@@ -683,7 +839,12 @@ async function toggleSub(task, subtask) {
               </label>
             </div>
           </div>
-          <div class="modal-actions">
+        </div>
+        <div class="modal-actions">
+          <template v-if="editorStep === 'template'">
+            <button class="btn btn-ghost" type="button" @click="requestClose">取消</button>
+          </template>
+          <template v-else>
             <button
               v-if="editor.mode === 'edit'"
               class="btn btn-danger"
@@ -693,12 +854,26 @@ async function toggleSub(task, subtask) {
             >
               归档
             </button>
-            <button class="btn btn-ghost" type="button" :disabled="saving" @click="requestClose">取消</button>
+            <button class="btn btn-ghost" type="button" @click="requestClose">取消</button>
             <button class="btn btn-primary" type="button" :disabled="saving" @click="saveEditor">
               {{ saving ? '保存中' : '保存' }}
             </button>
-          </div>
-        </template>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="menuTask" class="modal-mask" @click.self="closeMenu">
+      <div class="modal-sheet menu-sheet">
+        <h2 class="modal-title">{{ menuTask.title }}</h2>
+        <button type="button" class="menu-item" @click="menuEdit">修改</button>
+        <button type="button" class="menu-item" @click="menuPin">
+          {{ menuTask.pinned ? '取消置顶' : '置顶' }}
+        </button>
+        <button type="button" class="menu-item danger" @click="menuArchive">归档</button>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" @click="closeMenu">取消</button>
+        </div>
       </div>
     </div>
 
@@ -843,6 +1018,7 @@ async function toggleSub(task, subtask) {
   touch-action: pan-y;
   transition: transform 0.22s ease;
   user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .swipe.expanded .card {
@@ -918,6 +1094,35 @@ async function toggleSub(task, subtask) {
   font-weight: 650;
 }
 
+.more {
+  min-width: 44px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  margin-right: -6px;
+  color: var(--muted);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  line-height: 1;
+}
+
+.menu-sheet .menu-item {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0 4px;
+  text-align: left;
+  font-size: var(--fs-lg);
+  font-weight: 650;
+}
+
+.menu-sheet .menu-item.danger {
+  color: var(--danger);
+}
+
+.menu-sheet .modal-actions {
+  margin-top: 12px;
+}
+
 .subtasks {
   position: relative;
   z-index: 2;
@@ -978,6 +1183,25 @@ async function toggleSub(task, subtask) {
   margin: 0 0 8px;
   color: var(--muted);
   font-size: var(--fs-sm);
+}
+
+.target-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -8px 0 16px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.target-field input {
+  width: 92px;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
 }
 
 .subtask-editor {
@@ -1147,6 +1371,65 @@ async function toggleSub(task, subtask) {
   color: var(--amber);
   min-height: 44px;
   font-weight: 650;
+}
+
+.backup-nag {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--bg-elev);
+}
+
+.backup-nag p {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.backup-nag div {
+  display: flex;
+  gap: 10px;
+}
+
+.backup-nag button {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--amber);
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.backup-nag .later {
+  background: var(--bg-soft);
+  color: var(--amber);
+}
+
+.editor-sheet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.editor-sheet .modal-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.editor-sheet .modal-actions {
+  position: sticky;
+  bottom: 0;
+  flex: 0 0 auto;
+  margin: 0 -20px;
+  padding: 12px 20px calc(12px + var(--safe-bottom));
+  background: var(--bg-elev);
+  border-top: 1px solid var(--line);
 }
 
 .modal-actions .btn {

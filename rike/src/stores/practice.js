@@ -7,8 +7,13 @@ import { toast } from './ui'
 export const TASK_ID = 'guitar'
 export const DRAW_ID = 'drawing'
 
+export const COMPLETION_MODES = [
+  { id: 'check', title: '打卡' },
+  { id: 'counter', title: '计数' },
+  { id: 'photo-log', title: '传图' },
+]
+
 export const TASK_COMPONENTS = [
-  { id: 'counter', title: '计数器' },
   { id: 'pomodoro', title: '番茄钟' },
   { id: 'images', title: '插入图片' },
   { id: 'annotation', title: '批注' },
@@ -16,7 +21,7 @@ export const TASK_COMPONENTS = [
   { id: 'notes', title: '笔记' },
 ]
 
-export const DEFAULT_RICH_COMPONENTS = ['counter', 'pomodoro', 'images', 'annotation', 'sheet', 'notes']
+export const DEFAULT_RICH_COMPONENTS = ['counter', 'pomodoro', 'annotation', 'sheet', 'notes']
 
 export const TASK_TEMPLATES = [
   {
@@ -27,7 +32,7 @@ export const TASK_TEMPLATES = [
     completion: 'counter',
     sheet: true,
     notes: true,
-    components: ['counter', 'pomodoro', 'sheet', 'annotation', 'notes'],
+    components: ['pomodoro', 'sheet', 'annotation', 'notes'],
     summary: '计数、番茄钟、曲谱、批注、笔记',
   },
   {
@@ -38,19 +43,19 @@ export const TASK_TEMPLATES = [
     completion: 'photo-log',
     sheet: false,
     notes: false,
-    components: ['images', 'annotation', 'notes'],
-    summary: '图片打卡、作品图片、批注、日记',
+    components: ['annotation', 'notes'],
+    summary: '图片打卡、批注、笔记',
   },
   {
     id: 'study',
     title: '学习 / 备考',
     defaultTitle: '学习',
     color: '#8fbf88',
-    completion: 'counter',
+    completion: 'check',
     sheet: false,
     notes: true,
     components: ['pomodoro', 'notes'],
-    summary: '番茄钟、笔记、可添加子任务',
+    summary: '打卡、番茄钟、笔记、可添加子任务',
   },
   {
     id: 'fitness',
@@ -71,7 +76,7 @@ export const TASK_TEMPLATES = [
     completion: 'check',
     sheet: false,
     notes: false,
-    components: ['check', 'notes'],
+    components: ['notes'],
     summary: '普通打卡、可添加子任务、日记',
   },
   {
@@ -82,7 +87,7 @@ export const TASK_TEMPLATES = [
     completion: 'check',
     sheet: false,
     notes: false,
-    components: ['check'],
+    components: [],
     summary: '普通打卡',
   },
 ]
@@ -117,6 +122,7 @@ export const practice = reactive({
   taskNotes: {},
   taskNotesUpdatedAt: {},
   tasksUpdatedAt: '',
+  lastBackupAt: '',
 })
 
 function readInk() {
@@ -352,22 +358,36 @@ async function saveTasks() {
 }
 
 export function normalizeTask(task) {
-  const sheet = typeof task.sheet === 'boolean' ? task.sheet : task.completion === 'counter'
-  const notes = typeof task.notes === 'boolean' ? task.notes : task.completion === 'counter'
+  let completion = task.completion || 'check'
   let components = Array.isArray(task.components) ? task.components.filter(Boolean) : null
-  if (task.completion === 'counter' && !components) {
-    components = ['counter']
+  if (components == null) {
+    components = []
+    if (completion === 'counter') components.push('counter')
+    const sheet = typeof task.sheet === 'boolean' ? task.sheet : completion === 'counter'
+    const notes = typeof task.notes === 'boolean' ? task.notes : completion === 'counter'
     if (sheet) components.push('sheet')
     if (notes) components.push('notes')
   }
-  const componentSet = new Set(components || [])
+  components = components.filter((id) => id && id !== 'check')
+  const hadCounter = components.includes('counter')
+  if (hadCounter && completion === 'check') completion = 'counter'
+  if (completion === 'counter' && !hadCounter) completion = 'check'
+  const componentSet = new Set(components.filter((id) => id !== 'counter'))
+  if (completion === 'counter') componentSet.add('counter')
+  let target = task.target
+  if (completion === 'counter') {
+    const n = Math.round(Number(target))
+    target = Number.isFinite(n) && n >= 1 && n <= 999 ? n : 10
+  }
   const repeatWeekdays = [...new Set(Array.isArray(task.repeatWeekdays) ? task.repeatWeekdays : [])]
     .map((item) => Math.round(Number(item)))
     .filter((item) => item >= 1 && item <= 7)
   return {
     ...task,
-    sheet: task.completion === 'counter' ? componentSet.has('sheet') : false,
-    notes: task.completion === 'counter' ? componentSet.has('notes') : false,
+    completion,
+    target,
+    sheet: componentSet.has('sheet'),
+    notes: componentSet.has('notes'),
     components: [...componentSet],
     dueDate: task.dueDate || localDateKey(),
     longTerm: 'longTerm' in task ? Boolean(task.longTerm) : !task.dueDate,
@@ -420,7 +440,8 @@ function defaultTasks(guitar, drawing) {
       color: '#7da9c7',
       completion: 'photo-log',
       sheet: false,
-      notes: false,
+      notes: true,
+      components: ['annotation', 'notes'],
       dueDate: localDateKey(),
       longTerm: true,
       repeatWeekdays: [],
@@ -493,36 +514,27 @@ export async function addTask({
   }
   const used = new Set(practice.tasks.map((item) => item.color))
   const nextColor = TASK_COLORS.find((c) => !used.has(c)) || color || TASK_COLORS[0]
-  const task = {
+  const task = normalizeTask({
     id: uid('t'),
     title: name,
     template: template || 'custom',
     color: color || nextColor,
     completion: completion || 'check',
-    target: completion === 'counter' ? target || 10 : undefined,
+    target,
     reminder: reminder || '',
     dueDate: dueDate || localDateKey(),
     longTerm: Boolean(longTerm),
-    repeatWeekdays: [...new Set(Array.isArray(repeatWeekdays) ? repeatWeekdays : [])]
-      .map((item) => Math.round(Number(item)))
-      .filter((item) => item >= 1 && item <= 7),
+    repeatWeekdays: Array.isArray(repeatWeekdays) ? repeatWeekdays : [],
     paused: Boolean(paused),
     archived: false,
     sheet: Boolean(sheet),
     notes: Boolean(notes),
-    components: [...new Set(components || [])],
-    subtasks: Array.isArray(subtasks)
-      ? subtasks
-          .map((item) => ({
-            id: item.id || uid('s'),
-            title: String(item.title || '').trim(),
-          }))
-          .filter((item) => item.title)
-      : [],
+    components: Array.isArray(components) ? components : [],
+    subtasks: Array.isArray(subtasks) ? subtasks : [],
     pinned: false,
     pinnedAt: 0,
     order: practice.tasks.length,
-  }
+  })
   practice.tasks.push(task)
   try {
     await saveTasks()
@@ -553,14 +565,11 @@ export async function updateTask(id, patch) {
     if (patch.color) task.color = patch.color
     if ('template' in patch) task.template = patch.template || 'custom'
     if ('reminder' in patch) task.reminder = patch.reminder || ''
+    if ('completion' in patch) task.completion = patch.completion || 'check'
     if ('sheet' in patch) task.sheet = Boolean(patch.sheet)
     if ('notes' in patch) task.notes = Boolean(patch.notes)
     if ('components' in patch) {
       task.components = [...new Set((patch.components || []).filter(Boolean))]
-      if (task.completion === 'counter') {
-        task.sheet = task.components.includes('sheet')
-        task.notes = task.components.includes('notes')
-      }
     }
     if ('dueDate' in patch) task.dueDate = patch.dueDate || localDateKey()
     if ('longTerm' in patch) task.longTerm = Boolean(patch.longTerm)
@@ -581,7 +590,7 @@ export async function updateTask(id, patch) {
             .filter((item) => item.title)
         : []
     }
-    if (patch.target != null && task.completion === 'counter') {
+    if (patch.target != null && (task.completion === 'counter' || patch.completion === 'counter')) {
       const n = Math.round(Number(patch.target))
       if (!Number.isFinite(n) || n < 1 || n > 999) {
         Object.assign(task, snapshot)
@@ -590,6 +599,7 @@ export async function updateTask(id, patch) {
       }
       task.target = n
     }
+    Object.assign(task, normalizeTask(task))
     await saveTasks()
     return true
   } catch (error) {
@@ -900,8 +910,8 @@ export function taskLogsImages(task) {
   if (!task) return false
   const components = Array.isArray(task.components) ? task.components : []
   if (!components.includes('images')) return false
-  if (task.sheet || components.includes('sheet')) return false
-  return true
+  if (task.completion === 'photo-log') return false
+  return task.completion === 'counter'
 }
 
 export function galleryPhotosForTask(taskId) {
@@ -1034,6 +1044,7 @@ export async function bootPractice() {
     await loadCheckins()
     await loadJournals()
     await loadTaskNotes()
+    practice.lastBackupAt = (await db.kvGet('lastBackupAt')) || ''
   } catch (error) {
     console.error(error)
     toast('本地数据打开失败，刷新试试')
@@ -1146,4 +1157,5 @@ export async function reloadAll() {
   await loadCheckins()
   await loadJournals()
   await loadTaskNotes()
+  practice.lastBackupAt = (await db.kvGet('lastBackupAt')) || ''
 }

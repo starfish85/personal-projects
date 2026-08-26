@@ -1,6 +1,8 @@
 import * as db from '../db'
 import { blobToBase64, base64ToBlob } from './image'
-import { reloadAll } from '../stores/practice'
+import { practice, reloadAll } from '../stores/practice'
+
+export const BACKUP_NAG_MS = 7 * 24 * 60 * 60 * 1000
 
 export async function exportBackup() {
   const kv = await db.kvGetAll()
@@ -34,15 +36,56 @@ export async function exportBackup() {
   }
 }
 
+export function backupStamp(data) {
+  return String(data?.exportedAt || new Date().toISOString()).slice(0, 10)
+}
+
+export function backupFileName(data) {
+  return `rike-backup-${backupStamp(data)}.json`
+}
+
 export function downloadBackup(data) {
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  const stamp = data.exportedAt.slice(0, 10)
   a.href = url
-  a.download = `rike-backup-${stamp}.json`
+  a.download = backupFileName(data)
   a.click()
   URL.revokeObjectURL(url)
+}
+
+export async function markLastBackupAt(iso = new Date().toISOString()) {
+  practice.lastBackupAt = iso
+  await db.kvSet('lastBackupAt', iso)
+  return iso
+}
+
+export async function exportAndDownload() {
+  const data = await exportBackup()
+  downloadBackup(data)
+  await markLastBackupAt()
+  return data
+}
+
+export function backupNagNeeded() {
+  try {
+    if (sessionStorage.getItem('rikeBackupNag') === '1') return false
+  } catch {
+    /* private mode */
+  }
+  const at = practice.lastBackupAt
+  if (!at) return true
+  const t = new Date(at).getTime()
+  if (!Number.isFinite(t)) return true
+  return Date.now() - t >= BACKUP_NAG_MS
+}
+
+export function dismissBackupNag() {
+  try {
+    sessionStorage.setItem('rikeBackupNag', '1')
+  } catch {
+    /* private mode */
+  }
 }
 
 export async function importBackup(file) {

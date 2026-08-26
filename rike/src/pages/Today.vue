@@ -5,7 +5,7 @@ import PracticeCounter from '../components/PracticeCounter.vue'
 import TaskHelpers from '../components/TaskHelpers.vue'
 import { practice, setTarget } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
-import { downloadBackup, exportBackup, importBackup } from '../utils/backup'
+import { backupFileName, exportAndDownload, importBackup } from '../utils/backup'
 
 const router = useRouter()
 const showTarget = ref(false)
@@ -24,9 +24,8 @@ async function saveTarget() {
 
 async function doExport() {
   try {
-    const data = await exportBackup()
-    downloadBackup(data)
-    toast('备份已下载，换机或清缓存前留好这份文件')
+    const data = await exportAndDownload()
+    toast(`已导出 ${backupFileName(data)}`)
   } catch {
     toast('导出失败')
   }

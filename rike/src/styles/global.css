@@ -123,6 +123,11 @@ img {
   pointer-events: none;
 }
 
+.app:has(.modal-mask) .toast {
+  bottom: auto;
+  top: calc(16px + var(--safe-top));
+}
+
 .modal-mask {
   position: fixed;
   inset: 0;

@@ -203,7 +203,7 @@ onBeforeRouteLeave(() => {
     <header class="hud top">
       <button type="button" class="hud-btn" @click="goHome">返回</button>
       <span class="page-no">{{ pageLabel }}</span>
-      <PracticeCounter variant="pill" />
+      <PracticeCounter v-if="practice.task.completion === 'counter'" variant="pill" />
       <button type="button" class="hud-btn" @click="toolsOpen = !toolsOpen">
         {{ toolsOpen ? '收起' : '工具' }}
       </button>

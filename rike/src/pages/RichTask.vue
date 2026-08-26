@@ -8,12 +8,11 @@ import {
   practice,
   setTarget,
   subtaskDone,
-  taskHasComponent,
   taskHasGallery,
   toggleSubtask,
 } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
-import { downloadBackup, exportBackup, importBackup } from '../utils/backup'
+import { backupFileName, exportAndDownload, importBackup } from '../utils/backup'
 
 const router = useRouter()
 const showTarget = ref(false)
@@ -33,9 +32,8 @@ async function saveTarget() {
 
 async function doExport() {
   try {
-    const data = await exportBackup()
-    downloadBackup(data)
-    toast('备份已下载，换机或清缓存前留好这份文件')
+    const data = await exportAndDownload()
+    toast(`已导出 ${backupFileName(data)}`)
   } catch {
     toast('导出失败')
   }
@@ -72,9 +70,15 @@ async function onImport(event) {
       <p class="date">{{ practice.date }}</p>
     </header>
 
+    <PracticeCounter
+      v-if="practice.task.completion === 'counter'"
+      variant="hero"
+      @edit-target="openTarget"
+    />
+
     <template v-if="subtasks.length">
-      <p v-if="done" class="ok">今日已完成</p>
-      <p v-else class="idle">今日未完成</p>
+      <p v-if="practice.task.completion !== 'counter' && done" class="ok">今日已完成</p>
+      <p v-else-if="practice.task.completion !== 'counter'" class="idle">今日未完成</p>
       <section class="subtasks">
         <button
           v-for="subtask in subtasks"
@@ -89,8 +93,6 @@ async function onImport(event) {
         </button>
       </section>
     </template>
-
-    <PracticeCounter v-else-if="taskHasComponent('counter')" variant="hero" @edit-target="openTarget" />
 
     <button
       v-if="taskHasGallery(practice.task)"

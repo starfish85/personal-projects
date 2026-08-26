@@ -2,7 +2,11 @@
 import { computed, reactive, ref } from 'vue'
 import { getCloudConfig, setCloudConfig } from '../cloud/client'
 import { cloud, fullSync, sendLogin, signOut } from '../stores/sync'
-import { toast } from '../stores/ui'
+import { confirmDialog, toast } from '../stores/ui'
+import { backupFileName, exportAndDownload, importBackup } from '../utils/backup'
+
+const importRef = ref(null)
+const backupBusy = ref(false)
 
 const config = getCloudConfig()
 const open = ref(!config && !cloud.user)
@@ -33,6 +37,45 @@ function saveConfig() {
 async function login() {
   const ok = await sendLogin(email.value)
   if (ok) open.value = false
+}
+
+async function doExport() {
+  if (backupBusy.value) return
+  backupBusy.value = true
+  try {
+    const data = await exportAndDownload()
+    toast(`已导出 ${backupFileName(data)}`)
+  } catch {
+    toast('导出失败')
+  } finally {
+    backupBusy.value = false
+  }
+}
+
+async function askImport() {
+  if (backupBusy.value) return
+  const ok = await confirmDialog({
+    title: '导入备份？',
+    copy: '会覆盖本机现有的遍数、图片、标注和笔记。',
+    ok: '导入',
+    danger: true,
+  })
+  if (ok) importRef.value?.click()
+}
+
+async function onImport(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  backupBusy.value = true
+  try {
+    await importBackup(file)
+    toast('备份已导入')
+  } catch (error) {
+    toast(error.message || '导入失败')
+  } finally {
+    backupBusy.value = false
+  }
 }
 </script>
 
@@ -65,6 +108,18 @@ async function login() {
           <button class="btn btn-ghost" type="button" @click="signOut">退出</button>
         </div>
       </template>
+      <p class="hint">
+        云同步只同步文字和进度。曲谱、打卡图、日记图只在这台手机，清缓存会丢。换机前请导出。
+      </p>
+      <div class="actions backup">
+        <button class="btn btn-ghost" type="button" :disabled="backupBusy" @click="doExport">
+          {{ backupBusy ? '处理中' : '导出备份' }}
+        </button>
+        <button class="btn btn-ghost" type="button" :disabled="backupBusy" @click="askImport">
+          导入备份
+        </button>
+      </div>
+      <input ref="importRef" class="hidden" type="file" accept="application/json" @change="onImport" />
     </div>
   </section>
 </template>
@@ -135,6 +190,21 @@ async function login() {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
+}
+
+.actions.backup {
+  grid-template-columns: 1fr 1fr;
+}
+
+.hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hidden {
+  display: none;
 }
 
 .btn:disabled {

@@ -27,11 +27,11 @@ const timerFull = ref(false)
 let timer = 0
 
 const components = computed(() => ({
-  pomodoro: taskHasComponent('pomodoro'),
-  images: taskHasComponent('images'),
-  annotation: taskHasComponent('annotation'),
   sheet: taskHasComponent('sheet'),
   notes: taskHasComponent('notes'),
+  pomodoro: taskHasComponent('pomodoro'),
+  images: taskHasComponent('images') && practice.task.completion !== 'photo-log',
+  annotation: taskHasComponent('annotation'),
 }))
 const imageCheckin = computed(() => taskLogsImages(practice.task))
 const panelImages = computed(() => {
@@ -165,6 +165,16 @@ onBeforeUnmount(() => {
 
 <template>
   <section v-if="Object.values(components).some(Boolean)" class="helpers">
+    <button v-if="components.sheet" class="panel link-card" type="button" @click="router.push(`/sheet/${practice.task.id}`)">
+      <strong>曲谱</strong>
+      <span>{{ practice.sheets.length ? `${practice.sheets.length} 页` : '还没有谱' }}</span>
+    </button>
+
+    <button v-if="components.notes" class="panel link-card" type="button" @click="router.push(`/notes/${practice.task.id}`)">
+      <strong>笔记</strong>
+      <span>{{ practice.notes.length ? `${practice.notes.length} 张` : '还没有笔记' }}</span>
+    </button>
+
     <article v-if="components.pomodoro" class="panel timer">
       <div class="panel-head">
         <div>
@@ -243,16 +253,6 @@ onBeforeUnmount(() => {
       </div>
       <textarea v-model="noteDraft" class="note" rows="5" placeholder="写下这次任务的要点、提醒或复盘" />
     </article>
-
-    <button v-if="components.sheet" class="panel link-card" type="button" @click="router.push(`/sheet/${practice.task.id}`)">
-      <strong>曲谱</strong>
-      <span>{{ practice.sheets.length ? `${practice.sheets.length} 页` : '还没有谱' }}</span>
-    </button>
-
-    <button v-if="components.notes" class="panel link-card" type="button" @click="router.push(`/notes/${practice.task.id}`)">
-      <strong>笔记</strong>
-      <span>{{ practice.notes.length ? `${practice.notes.length} 张` : '还没有笔记' }}</span>
-    </button>
 
     <div v-if="timerFull" class="timer-full">
       <button type="button" class="timer-close" @click="closeFullTimer">收起</button>
