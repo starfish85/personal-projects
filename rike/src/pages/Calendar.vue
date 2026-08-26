@@ -21,12 +21,23 @@ import {
   helperImagesForTask,
   taskHasGallery,
   taskLogsImages,
+  skipTaskOnDate,
   tasksForCalendarDate,
   toggleCheckOnDate,
   toggleSubtask,
+  unskipTaskOnDate,
 } from '../stores/practice'
 import { confirmDialog } from '../stores/ui'
-import { dateMode, formatClock, formatDayTitle, localDateKey, monthGrid } from '../utils/date'
+import {
+  dateMode,
+  formatClock,
+  formatDayTitle,
+  formatPracticeTime,
+  localDateKey,
+  monthGrid,
+  shiftDateKey,
+  weekGrid,
+} from '../utils/date'
 
 defineOptions({ name: 'Calendar' })
 
@@ -34,6 +45,7 @@ const router = useRouter()
 const route = useRoute()
 const today = computed(() => practice.date || localDateKey())
 const cursor = ref(new Date())
+const calView = ref('month')
 const selected = ref(String(route.query.date || localDateKey()))
 const daysByTask = ref({})
 const viewerOpen = ref(false)
@@ -46,8 +58,28 @@ const viewerKind = ref('checkin')
 
 const year = computed(() => cursor.value.getFullYear())
 const month = computed(() => cursor.value.getMonth())
-const title = computed(() => `${year.value}年${month.value + 1}月`)
-const cells = computed(() => monthGrid(year.value, month.value))
+const title = computed(() => {
+  if (calView.value !== 'week') return `${year.value}年${month.value + 1}月`
+  const days = weekGrid(selected.value)
+  const a = days[0]
+  const b = days[6]
+  return `${Number(a.slice(5, 7))}月${Number(a.slice(8))}日 – ${Number(b.slice(5, 7))}月${Number(b.slice(8))}日`
+})
+const cells = computed(() =>
+  calView.value === 'week' ? weekGrid(selected.value) : monthGrid(year.value, month.value),
+)
+const weekMeta = computed(() => {
+  const days = weekGrid(selected.value)
+  let due = 0
+  let done = 0
+  for (const day of days) {
+    if (!tasksForCell(day).length) continue
+    due += 1
+    if (allDoneOn(day)) done += 1
+  }
+  if (!due) return '本周没有安排'
+  return `本周完成 ${done} / ${due} 天`
+})
 const selectedTasks = computed(() => tasksForCalendarDate(selected.value, daysByTask.value))
 const mode = computed(() => dateMode(selected.value, today.value))
 const isFuture = computed(() => mode.value === 'future')
@@ -71,6 +103,7 @@ function subDone(taskId, subtaskId) {
 }
 
 function statusLine(task) {
+  if ((task.skipDates || []).includes(selected.value)) return '已跳过'
   if (isFuture.value) return '已安排'
   if (task.subtasks?.length) {
     const rec = record(task.id, selected.value)
@@ -79,8 +112,11 @@ function statusLine(task) {
     if (doneCount > 0) return `${doneCount}/${task.subtasks.length}`
     return '未完成'
   }
-  if (status(selected.value, task)) return task.completion === 'photo-log' ? '已打卡' : '已完成'
-  return '未完成'
+  let line = '未完成'
+  if (status(selected.value, task)) line = task.completion === 'photo-log' ? '已打卡' : '已完成'
+  const time = formatPracticeTime(record(task.id, selected.value)?.seconds)
+  if (time) line += ` · ${time}`
+  return line
 }
 
 function tasksForCell(dateKey) {
@@ -145,7 +181,30 @@ async function refresh() {
 }
 
 function shiftMonth(delta) {
+  if (calView.value === 'week') {
+    const next = shiftDateKey(selected.value, delta * 7)
+    selected.value = next
+    armed.value = true
+    const [y, m] = next.split('-').map(Number)
+    cursor.value = new Date(y, m - 1, 1)
+    router.replace({ path: '/calendar', query: { date: next } })
+    return
+  }
   cursor.value = new Date(year.value, month.value + delta, 1)
+}
+
+function setCalView(mode) {
+  calView.value = mode
+}
+
+function skipped(task) {
+  return (task.skipDates || []).includes(selected.value)
+}
+
+async function toggleSkip(task) {
+  if (!task.longTerm) return
+  if (skipped(task)) await unskipTaskOnDate(task.id, selected.value)
+  else await skipTaskOnDate(task.id, selected.value)
 }
 
 const armed = ref(false)
@@ -281,14 +340,21 @@ watch(
 
     <section class="cal">
       <div class="nav">
-        <button type="button" @click="shiftMonth(-1)">上个月</button>
-        <strong>{{ title }}</strong>
-        <button type="button" @click="shiftMonth(1)">下个月</button>
+        <button type="button" @click="shiftMonth(-1)">{{ calView === 'week' ? '上一周' : '上个月' }}</button>
+        <div class="nav-mid">
+          <strong>{{ title }}</strong>
+          <div class="view-switch">
+            <button type="button" :class="{ on: calView === 'month' }" @click="setCalView('month')">月</button>
+            <button type="button" :class="{ on: calView === 'week' }" @click="setCalView('week')">周</button>
+          </div>
+        </div>
+        <button type="button" @click="shiftMonth(1)">{{ calView === 'week' ? '下一周' : '下个月' }}</button>
       </div>
+      <p v-if="calView === 'week'" class="week-meta">{{ weekMeta }}</p>
       <div class="week">
         <span v-for="w in ['一', '二', '三', '四', '五', '六', '日']" :key="w">{{ w }}</span>
       </div>
-      <div class="grid">
+      <div class="grid" :class="{ week: calView === 'week' }">
         <button
           v-for="(cell, i) in cells"
           :key="i"
@@ -405,24 +471,29 @@ watch(
             <i />
           </button>
 
-          <button v-if="isToday" type="button" class="open inline" @click="openTask(task.id)">打开任务</button>
-          <button
-            v-if="isToday && task.completion === 'photo-log'"
-            type="button"
-            class="open inline"
-            @click="pickPhoto(task.id)"
-          >
-            上传图片
-          </button>
-          <button v-if="isFuture" type="button" class="open inline" @click="editTask(task.id)">修改任务</button>
-          <button
-            v-if="taskHasGallery(task)"
-            type="button"
-            class="open inline"
-            @click="openGallery(task.id)"
-          >
-            查看作品墙
-          </button>
+          <div v-if="isToday || isFuture || taskHasGallery(task)" class="task-actions">
+            <button v-if="isToday" type="button" class="open" @click="openTask(task.id)">打开任务</button>
+            <button
+              v-if="isToday && task.completion === 'photo-log'"
+              type="button"
+              class="open"
+              @click="pickPhoto(task.id)"
+            >
+              上传图片
+            </button>
+            <button v-if="isFuture" type="button" class="open" @click="editTask(task.id)">修改任务</button>
+            <button
+              v-if="task.longTerm && (isToday || isFuture)"
+              type="button"
+              class="open"
+              @click="toggleSkip(task)"
+            >
+              {{ skipped(task) ? '取消跳过' : '今天不练' }}
+            </button>
+            <button v-if="taskHasGallery(task)" type="button" class="open" @click="openGallery(task.id)">
+              查看作品墙
+            </button>
+          </div>
         </div>
 
         <div v-if="canEditJournal" class="block">
@@ -504,7 +575,41 @@ watch(
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 12px;
+}
+
+.nav-mid {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.view-switch {
+  display: flex;
+  gap: 4px;
+}
+
+.view-switch button {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.view-switch button.on {
+  background: var(--amber);
+  color: var(--ink);
+}
+
+.week-meta {
+  margin: 0 0 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .nav button {
@@ -531,6 +636,10 @@ watch(
   height: var(--cell);
   border-radius: 10px;
   color: var(--text);
+}
+
+.grid.week .cell {
+  height: 72px;
 }
 
 .cell.empty,
@@ -731,8 +840,19 @@ watch(
   margin-top: 0;
 }
 
-.open.inline {
+.task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 20px;
+  row-gap: 4px;
   margin-top: 10px;
+}
+
+.task-actions .open {
+  margin-top: 0;
+  min-height: 44px;
+  padding: 0 2px;
 }
 
 .subtasks {

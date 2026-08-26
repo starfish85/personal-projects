@@ -63,6 +63,32 @@ export function dateMode(date, today = localDateKey()) {
   return 'today'
 }
 
+export function shiftDateKey(dateKey, days) {
+  const [y, m, d] = String(dateKey || localDateKey()).split('-').map(Number)
+  return localDateKey(new Date(y, m - 1, d + days))
+}
+
+export function weekStart(dateKey) {
+  const [y, m, d] = String(dateKey || localDateKey()).split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const offset = (date.getDay() + 6) % 7
+  date.setDate(date.getDate() - offset)
+  return localDateKey(date)
+}
+
+export function weekGrid(dateKey) {
+  const start = weekStart(dateKey)
+  return Array.from({ length: 7 }, (_, i) => shiftDateKey(start, i))
+}
+
+export function formatPracticeTime(seconds) {
+  const s = Math.round(Number(seconds) || 0)
+  if (s <= 0) return ''
+  const m = Math.round(s / 60)
+  if (m < 1) return '不足 1 分钟'
+  return `${m} 分钟`
+}
+
 export function formatClock(iso) {
   if (!iso) return ''
   const date = new Date(iso)

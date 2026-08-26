@@ -22,13 +22,14 @@ export async function exportBackup() {
       order: asset.order,
       date: asset.date || null,
       featured: Boolean(asset.featured),
+      pieceId: asset.pieceId || '',
       blobBase64: await blobToBase64(asset.blob),
       thumbBase64: asset.thumbBlob ? await blobToBase64(asset.thumbBlob) : '',
     })
   }
   return {
     app: 'rike',
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     kv,
     assets: packedAssets,
@@ -112,6 +113,7 @@ export async function importBackup(file) {
       order: asset.order,
       date: asset.date || null,
       featured: Boolean(asset.featured),
+      pieceId: asset.pieceId || '',
       blob: base64ToBlob(asset.blobBase64, asset.mime),
       thumbBlob: asset.thumbBase64 ? base64ToBlob(asset.thumbBase64, asset.mime) : null,
     })

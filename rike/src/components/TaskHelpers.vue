@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import {
   addCheckins,
   addHelperImages,
+  addPracticeSeconds,
   checkinsOn,
   helperImagesForTask,
   practice,
@@ -25,6 +26,15 @@ const timerSeconds = ref(25 * 60)
 const timerOn = ref(false)
 const timerFull = ref(false)
 let timer = 0
+let sessionAnchor = 0
+
+async function settleSegment() {
+  let elapsed = 0
+  if (timerMode.value === 'down') elapsed = Math.max(0, sessionAnchor - timerSeconds.value)
+  else elapsed = Math.max(0, timerSeconds.value - sessionAnchor)
+  sessionAnchor = timerSeconds.value
+  if (elapsed > 0) await addPracticeSeconds(elapsed)
+}
 
 const components = computed(() => ({
   sheet: taskHasComponent('sheet'),
@@ -57,8 +67,13 @@ const timerStateLabel = computed(() => {
 
 watch(
   () => practice.task.id,
-  (id) => {
+  (id, prev) => {
+    if (prev && timerOn.value) settleSegment()
     noteDraft.value = practice.taskNotes[id] || ''
+    window.clearInterval(timer)
+    timerOn.value = false
+    timerSeconds.value = timerMode.value === 'down' ? timerMinutes.value * 60 : 0
+    sessionAnchor = timerSeconds.value
   },
   { immediate: true },
 )
@@ -73,7 +88,7 @@ async function onFiles(event) {
     ? await addCheckins(files, null, practice.task.id)
     : await addHelperImages(files, practice.task.id)
   event.target.value = ''
-  if (added.length) toast(imageCheckin.value ? '已记下今天的打卡图' : '图片已插入')
+  if (added.length && !imageCheckin.value) toast('图片已插入')
 }
 
 async function deleteImage(item) {
@@ -97,6 +112,7 @@ function tick() {
     timerSeconds.value = 0
     timerOn.value = false
     window.clearInterval(timer)
+    settleSegment()
     toast('番茄钟结束')
     return
   }
@@ -109,6 +125,7 @@ function startTimer() {
   if (timerMode.value === 'down' && (timerSeconds.value <= 0 || timerSeconds.value > minutes * 60)) {
     timerSeconds.value = minutes * 60
   }
+  sessionAnchor = timerSeconds.value
   timerOn.value = true
   timerFull.value = true
   window.clearInterval(timer)
@@ -116,6 +133,7 @@ function startTimer() {
 }
 
 function pauseTimer() {
+  if (timerOn.value) settleSegment()
   timerOn.value = false
   window.clearInterval(timer)
 }
@@ -126,10 +144,12 @@ function toggleTimer() {
 }
 
 function resetTimer(minutes) {
+  if (timerOn.value) settleSegment()
   window.clearInterval(timer)
   timerOn.value = false
   if (minutes) timerMinutes.value = minutes
   timerSeconds.value = timerMode.value === 'down' ? timerMinutes.value * 60 : 0
+  sessionAnchor = timerSeconds.value
 }
 
 function onMinuteInput() {
@@ -159,6 +179,7 @@ async function saveNote() {
 }
 
 onBeforeUnmount(() => {
+  if (timerOn.value) settleSegment()
   window.clearInterval(timer)
 })
 </script>

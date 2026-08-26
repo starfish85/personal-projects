@@ -96,7 +96,6 @@ function openTaskWall(id) {
     </header>
 
     <template v-if="listMode">
-      <p class="lead">这里会列出所有需要图片打卡的任务，每个任务都有自己独立的墙。</p>
       <div v-if="taskCards.length" class="task-list">
         <button
           v-for="item in taskCards"
@@ -190,13 +189,6 @@ function openTaskWall(id) {
   color: var(--amber);
   font-weight: 650;
   text-align: left;
-}
-
-.lead {
-  margin: 14px 0 18px;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-  line-height: 1.55;
 }
 
 .empty-state {

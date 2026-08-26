@@ -1,6 +1,6 @@
 import { computed, reactive } from 'vue'
 import * as db from '../db'
-import { localDateKey, uid, weekdayOf } from '../utils/date'
+import { dateMode, localDateKey, shiftDateKey, uid, weekdayOf } from '../utils/date'
 import { compressImage, ImageError } from '../utils/image'
 import { toast } from './ui'
 
@@ -123,6 +123,8 @@ export const practice = reactive({
   taskNotesUpdatedAt: {},
   tasksUpdatedAt: '',
   lastBackupAt: '',
+  viewingDate: '',
+  byPiece: {},
 })
 
 function readInk() {
@@ -175,6 +177,7 @@ function viewAsset(asset) {
     order: asset.order,
     date: asset.date || null,
     featured: Boolean(asset.featured),
+    pieceId: String(asset.pieceId || ''),
     url,
     thumbUrl,
   }
@@ -204,6 +207,8 @@ function cloneTaskState(task) {
     components: Array.isArray(task.components) ? [...task.components] : [],
     subtasks: Array.isArray(task.subtasks) ? task.subtasks.map((item) => ({ ...item })) : [],
     repeatWeekdays: Array.isArray(task.repeatWeekdays) ? [...task.repeatWeekdays] : [],
+    skipDates: Array.isArray(task.skipDates) ? [...task.skipDates] : [],
+    pieces: Array.isArray(task.pieces) ? task.pieces.map((item) => ({ ...item })) : [],
   }
 }
 
@@ -234,16 +239,129 @@ function stampTask(task) {
   return task
 }
 
+function keepSeconds(prev, patchSeconds) {
+  return Math.max(0, Math.round(Number(patchSeconds ?? prev?.seconds) || 0))
+}
+
+function keepByPiece(prev) {
+  const src = prev?.byPiece && typeof prev.byPiece === 'object' && !Array.isArray(prev.byPiece) ? prev.byPiece : {}
+  const out = {}
+  for (const [id, rec] of Object.entries(src)) {
+    out[id] = {
+      count: Math.max(0, Math.round(Number(rec?.count) || 0)),
+      target: rec?.target == null ? null : Math.max(0, Math.round(Number(rec.target) || 0)),
+    }
+  }
+  return out
+}
+
+function dayRecord(prev, patch) {
+  return {
+    count: patch.count ?? prev?.count ?? 0,
+    target: 'target' in patch ? patch.target : (prev?.target ?? null),
+    completedAt: 'completedAt' in patch ? patch.completedAt : (prev?.completedAt ?? null),
+    subtasks: patch.subtasks ?? prev?.subtasks ?? {},
+    seconds: 'seconds' in patch ? keepSeconds(prev, patch.seconds) : keepSeconds(prev),
+    byPiece: patch.byPiece ?? keepByPiece(prev),
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+function normalizePieces(list) {
+  if (!Array.isArray(list)) return []
+  const seen = new Set()
+  const out = []
+  for (const item of list) {
+    const id = String(item?.id || '').trim()
+    const title = String(item?.title || '').trim()
+    if (!id || !title || seen.has(id)) continue
+    seen.add(id)
+    const n = Math.round(Number(item.target))
+    out.push({
+      id,
+      title,
+      target: Number.isFinite(n) && n >= 1 && n <= 999 ? n : 10,
+    })
+  }
+  return out
+}
+
+export function currentPieceOf(task) {
+  const pieces = Array.isArray(task?.pieces) ? task.pieces : []
+  if (!pieces.length) return null
+  const id = String(task.currentPieceId || '')
+  return pieces.find((item) => item.id === id) || null
+}
+
+export function pieceProgress(task, record) {
+  const piece = currentPieceOf(task)
+  if (!piece) {
+    return {
+      piece: null,
+      count: record?.count ?? (task?.id === practice.task.id ? practice.count : 0),
+      target: record?.target || task?.target || 10,
+    }
+  }
+  const rec =
+    record?.byPiece?.[piece.id] ||
+    (task.id === practice.task.id ? practice.byPiece?.[piece.id] : null) ||
+    {}
+  return {
+    piece,
+    count: Math.max(0, Math.round(Number(rec.count) || 0)),
+    target: rec.target || piece.target || task.target || 10,
+  }
+}
+
+function counterCopy(task, record, today) {
+  const progress = pieceProgress(task, record)
+  if (progress.piece) {
+    const { piece, count, target } = progress
+    if (count >= target) return `${today ? '今日已完成' : '已完成'} · ${piece.title} ${count}/${target}`
+    if (count > 0) return `${today ? '今日 ' : ''}${piece.title} ${count}/${target}`
+    return today ? `今日 ${piece.title} · 未完成` : `${piece.title} · 未完成`
+  }
+  const count = record?.count || 0
+  const target = record?.target || task.target || 10
+  if (count >= target) return `${today ? '今日已完成' : '已完成'} · ${count}/${target}`
+  if (count > 0) return `${today ? '今日 ' : ''}${count}/${target}`
+  return today ? '今日未完成' : '未完成'
+}
+
 async function saveDay() {
   const key = `day.${practice.task.id}.${practice.date}`
   const prev = (await db.kvGet(key)) || {}
-  await db.kvSet(key, {
-    count: practice.count,
-    target: practice.task.target || null,
-    completedAt: practice.completedAt,
-    subtasks: prev.subtasks || {},
-    updatedAt: new Date().toISOString(),
-  })
+  await db.kvSet(
+    key,
+    dayRecord(prev, {
+      count: practice.count,
+      target: practice.task.target || null,
+      completedAt: practice.completedAt,
+      subtasks: prev.subtasks || {},
+      byPiece: keepByPiece({ byPiece: practice.byPiece }),
+    }),
+  )
+  await refreshTodayMap()
+  notifyCloud()
+}
+
+export async function addPracticeSeconds(elapsed) {
+  const n = Math.round(Number(elapsed) || 0)
+  if (n <= 0) return
+  await ensureToday()
+  const key = `day.${practice.task.id}.${practice.date}`
+  const prev = (await db.kvGet(key)) || {}
+  await db.kvSet(
+    key,
+    dayRecord(prev, {
+      count: practice.count,
+      target: practice.task.target || null,
+      completedAt: practice.completedAt,
+      subtasks: prev.subtasks || {},
+      seconds: keepSeconds(prev) + n,
+      byPiece: keepByPiece({ byPiece: practice.byPiece }),
+    }),
+  )
   await refreshTodayMap()
   notifyCloud()
 }
@@ -263,6 +381,25 @@ export function dayComplete(task, record) {
   return target > 0 && record.count >= target
 }
 
+export function taskLineOnDate(task, date, record) {
+  const mode = dateMode(date)
+  if (mode === 'future') return '已安排'
+  if (mode === 'today') return taskTodayLine(task)
+  const subtasks = Array.isArray(task.subtasks) ? task.subtasks : []
+  if (subtasks.length) {
+    const doneCount = subtasks.filter((item) => record?.subtasks?.[item.id]).length
+    if (subtasks.length && doneCount === subtasks.length) return `已完成 · ${doneCount}/${subtasks.length}`
+    if (doneCount > 0) return `${doneCount}/${subtasks.length}`
+    return '未完成'
+  }
+  if (task.completion === 'counter') return counterCopy(task, record, false)
+  if (task.completion === 'photo-log') {
+    const n = record?.count || 0
+    return n ? `已打卡 · ${n} 张` : '未打卡'
+  }
+  return record?.completedAt || record?.count ? '已完成' : '未完成'
+}
+
 export function taskTodayLine(task) {
   const rec = practice.todayByTask[task.id]
   const subtasks = Array.isArray(task.subtasks) ? task.subtasks : []
@@ -272,13 +409,7 @@ export function taskTodayLine(task) {
     if (doneCount > 0) return `今日 ${doneCount}/${subtasks.length}`
     return '今日未完成'
   }
-  if (task.completion === 'counter') {
-    const count = rec?.count || 0
-    const target = task.target || 10
-    if (count >= target) return `今日已完成 · ${count}/${target}`
-    if (count > 0) return `今日 ${count}/${target}`
-    return '今日未完成'
-  }
+  if (task.completion === 'counter') return counterCopy(task, rec, true)
   if (task.completion === 'photo-log') {
     const n = rec?.count || 0
     return n ? `今日已打卡 · ${n} 张` : '今日未打卡'
@@ -286,7 +417,7 @@ export function taskTodayLine(task) {
   return rec?.completedAt || rec?.count ? '今日已完成' : '今日未完成'
 }
 
-export function taskOnDate(task, date = localDateKey()) {
+export function taskScheduledOn(task, date = localDateKey()) {
   if (!task) return false
   if (task.archived) return false
   if (task.paused) return false
@@ -296,6 +427,12 @@ export function taskOnDate(task, date = localDateKey()) {
     return weekdays.includes(weekdayOf(date))
   }
   return (task.dueDate || localDateKey()) === date
+}
+
+export function taskOnDate(task, date = localDateKey()) {
+  if (!task) return false
+  if ((task.skipDates || []).includes(date)) return false
+  return taskScheduledOn(task, date)
 }
 
 export function tasksOnDate(date = localDateKey()) {
@@ -335,13 +472,38 @@ function sortCalendarTasks(a, b) {
 }
 
 export function tasksForCalendarDate(date, daysByTask = {}) {
-  if (date >= localDateKey()) return tasksOnDate(date)
+  if (date >= localDateKey()) {
+    return practice.tasks.filter((task) => taskScheduledOn(task, date)).sort(sortCalendarTasks)
+  }
   return practice.tasks
     .filter((task) => {
       if (dayHasActivity(task, date, daysByTask)) return true
       return !task.longTerm && (task.dueDate || '') === date
     })
     .sort(sortCalendarTasks)
+}
+
+export function streakFor(task, today = localDateKey(), daysByTask = {}) {
+  if (!task?.longTerm || task.archived) return 0
+  const recOf = (date) => {
+    if (date === localDateKey()) return practice.todayByTask[task.id] || daysByTask?.[task.id]?.[date]
+    return daysByTask?.[task.id]?.[date]
+  }
+  let cursor = dayComplete(task, recOf(today)) ? today : shiftDateKey(today, -1)
+  let n = 0
+  for (let i = 0; i < 366; i += 1) {
+    if ((task.skipDates || []).includes(cursor) || !taskOnDate(task, cursor)) {
+      cursor = shiftDateKey(cursor, -1)
+      continue
+    }
+    if (dayComplete(task, recOf(cursor))) {
+      n += 1
+      cursor = shiftDateKey(cursor, -1)
+      continue
+    }
+    break
+  }
+  return n
 }
 
 export async function assertMutableDay(date) {
@@ -389,6 +551,12 @@ export function normalizeTask(task) {
   const repeatWeekdays = [...new Set(Array.isArray(task.repeatWeekdays) ? task.repeatWeekdays : [])]
     .map((item) => Math.round(Number(item)))
     .filter((item) => item >= 1 && item <= 7)
+  const skipDates = [...new Set(Array.isArray(task.skipDates) ? task.skipDates : [])].filter((item) =>
+    /^\d{4}-\d{2}-\d{2}$/.test(String(item)),
+  )
+  const pieces = normalizePieces(task.pieces)
+  let currentPieceId = String(task.currentPieceId || '')
+  if (currentPieceId && !pieces.some((item) => item.id === currentPieceId)) currentPieceId = ''
   return {
     ...task,
     completion,
@@ -399,6 +567,9 @@ export function normalizeTask(task) {
     dueDate: task.dueDate || localDateKey(),
     longTerm: 'longTerm' in task ? Boolean(task.longTerm) : !task.dueDate,
     repeatWeekdays,
+    skipDates,
+    pieces,
+    currentPieceId,
     archived: Boolean(task.archived),
     paused: Boolean(task.paused),
     subtasks: Array.isArray(task.subtasks)
@@ -600,6 +771,11 @@ export async function updateTask(id, patch) {
         .filter((item) => item >= 1 && item <= 7)
     }
     if ('paused' in patch) task.paused = Boolean(patch.paused)
+    if ('skipDates' in patch) {
+      task.skipDates = [...new Set(Array.isArray(patch.skipDates) ? patch.skipDates : [])].filter((item) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(String(item)),
+      )
+    }
     if ('archived' in patch) task.archived = Boolean(patch.archived)
     if ('subtasks' in patch) {
       task.subtasks = Array.isArray(patch.subtasks)
@@ -657,6 +833,31 @@ export async function restoreTask(id) {
   return true
 }
 
+export async function skipTaskOnDate(id, date) {
+  const task = practice.tasks.find((item) => item.id === id)
+  if (!task || !task.longTerm) return false
+  const today = localDateKey()
+  if (!date || date < today) {
+    toast('不能给过去补跳过')
+    return false
+  }
+  const next = new Set(task.skipDates || [])
+  next.add(date)
+  task.skipDates = [...next].sort()
+  stampTask(task)
+  await saveTasks()
+  return true
+}
+
+export async function unskipTaskOnDate(id, date) {
+  const task = practice.tasks.find((item) => item.id === id)
+  if (!task) return false
+  task.skipDates = (task.skipDates || []).filter((item) => item !== date)
+  stampTask(task)
+  await saveTasks()
+  return true
+}
+
 export async function pinTask(id) {
   const task = practice.tasks.find((item) => item.id === id)
   if (!task) return false
@@ -674,13 +875,29 @@ export async function pinTask(id) {
 }
 
 export async function refreshTodayMap() {
+  const previousToday = practice.date
   const date = localDateKey()
   practice.date = date
+  if (!practice.viewingDate || practice.viewingDate === previousToday) {
+    practice.viewingDate = date
+  }
   const map = {}
   for (const task of practice.tasks) {
     map[task.id] = await db.kvGet(`day.${task.id}.${date}`)
   }
   practice.todayByTask = map
+}
+
+export async function loadDaysByTask() {
+  const next = {}
+  await Promise.all(
+    practice.tasks.map(async (task) => {
+      const map = {}
+      for (const day of await listDays(task.id)) map[day.date] = day
+      next[task.id] = map
+    }),
+  )
+  return next
 }
 
 export function taskDoneToday(task) {
@@ -705,13 +922,15 @@ export async function toggleSubtask(taskId, subtaskId, date) {
   if (doneMap[subtaskId]) delete doneMap[subtaskId]
   else doneMap[subtaskId] = true
   const allDone = subtasks.length > 0 && subtasks.every((item) => doneMap[item.id])
-  await db.kvSet(key, {
-    count: allDone ? 1 : 0,
-    target: subtasks.length,
-    completedAt: allDone ? prev.completedAt || new Date().toISOString() : null,
-    subtasks: doneMap,
-    updatedAt: new Date().toISOString(),
-  })
+  await db.kvSet(
+    key,
+    dayRecord(prev, {
+      count: allDone ? 1 : 0,
+      target: subtasks.length,
+      completedAt: allDone ? prev.completedAt || new Date().toISOString() : null,
+      subtasks: doneMap,
+    }),
+  )
   await refreshTodayMap()
   notifyCloud()
   return true
@@ -729,6 +948,8 @@ export async function listDays(taskId = TASK_ID) {
       target: value?.target ?? null,
       completedAt: value?.completedAt || null,
       subtasks: value?.subtasks || {},
+      seconds: Math.max(0, Math.round(Number(value?.seconds) || 0)),
+      byPiece: keepByPiece(value),
       updatedAt: value?.updatedAt || null,
     })
   }
@@ -740,6 +961,7 @@ export async function loadToday() {
   const day = practice.todayByTask[practice.task.id]
   practice.count = day?.count || 0
   practice.completedAt = day?.completedAt || null
+  practice.byPiece = keepByPiece(day)
   if (practice.task.completion === 'counter') syncCompleteFlag()
 }
 
@@ -985,27 +1207,63 @@ export async function toggleFeaturedCheckin(id) {
 async function syncPhotoDay(taskId, date) {
   const n = practice.checkins.filter((item) => item.taskId === taskId && item.date === date).length
   const key = `day.${taskId}.${date}`
+  const prev = (await db.kvGet(key)) || {}
   if (n <= 0) {
-    const prev = await db.kvGet(key)
-    await db.kvSet(key, {
-      count: 0,
-      target: prev?.target ?? null,
-      completedAt: null,
-      subtasks: prev?.subtasks || {},
-      updatedAt: new Date().toISOString(),
-    })
-    await refreshTodayMap()
-    notifyCloud()
-    return
+    await db.kvSet(
+      key,
+      dayRecord(prev, {
+        count: 0,
+        target: prev.target ?? null,
+        completedAt: null,
+      }),
+    )
+  } else {
+    await db.kvSet(
+      key,
+      dayRecord(prev, {
+        count: n,
+        completedAt: prev.completedAt || new Date().toISOString(),
+      }),
+    )
   }
-  const prev = await db.kvGet(key)
-  await db.kvSet(key, {
-    count: n,
-    completedAt: prev?.completedAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  })
+  if (practice.task.id === taskId && date === practice.date) {
+    practice.count = n
+    practice.completedAt = n > 0 ? practice.completedAt || new Date().toISOString() : null
+    if (n <= 0) practice.completedAt = null
+  }
   await refreshTodayMap()
   notifyCloud()
+}
+
+async function adjustTaskCount(taskId, delta) {
+  await ensureToday()
+  const today = localDateKey()
+  const task = practice.tasks.find((item) => item.id === taskId)
+  const key = `day.${taskId}.${today}`
+  const prev = (await db.kvGet(key)) || {}
+  const count = Math.max(0, Math.round(Number(prev.count) || 0) + delta)
+  const target = Math.round(Number(prev.target || task?.target || 10)) || 10
+  const completedAt =
+    task?.completion === 'counter'
+      ? count >= target
+        ? prev.completedAt || new Date().toISOString()
+        : null
+      : prev.completedAt || null
+  await db.kvSet(
+    key,
+    dayRecord(prev, {
+      count,
+      target: task?.completion === 'counter' ? target : prev.target ?? null,
+      completedAt,
+    }),
+  )
+  if (practice.task.id === taskId) {
+    practice.count = count
+    practice.completedAt = completedAt
+  }
+  await refreshTodayMap()
+  notifyCloud()
+  return { count, target }
 }
 
 export async function addCheckins(fileList, date, taskId) {
@@ -1044,7 +1302,13 @@ export async function addCheckins(fileList, date, taskId) {
     }
   }
   await loadCheckins()
-  await syncPhotoDay(targetTask, today)
+  const task = practice.tasks.find((item) => item.id === targetTask)
+  if (taskLogsImages(task) && added.length) {
+    const result = await adjustTaskCount(targetTask, added.length)
+    toast(`已记下，今日 ${result.count}/${result.target}`)
+  } else if (!taskLogsImages(task)) {
+    await syncPhotoDay(targetTask, today)
+  }
   return added
 }
 
@@ -1062,7 +1326,11 @@ export async function removeCheckin(id) {
   await db.assetDelete(id)
   await db.rememberDeletedAsset(id)
   await loadCheckins()
-  if (item?.date && item?.taskId) await syncPhotoDay(item.taskId, item.date)
+  if (item?.date && item?.taskId) {
+    const task = practice.tasks.find((row) => row.id === item.taskId)
+    if (taskLogsImages(task)) await adjustTaskCount(item.taskId, -1)
+    else await syncPhotoDay(item.taskId, item.date)
+  }
   notifyCloud()
   return true
 }
@@ -1088,6 +1356,18 @@ export async function bootPractice() {
 export async function bump(delta) {
   // 无 date 参数：先切到本地今天，再写 day.{task}.{today}
   await ensureToday()
+  const pieces = Array.isArray(practice.task.pieces) ? practice.task.pieces : []
+  const pieceId = String(practice.task.currentPieceId || '')
+  if (pieces.length || pieceId) {
+    const rec = practice.byPiece[pieceId] || {
+      count: 0,
+      target: currentPieceOf(practice.task)?.target || practice.task.target || 10,
+    }
+    if (delta < 0 && rec.count <= 0) return
+    rec.count = Math.max(0, rec.count + delta)
+    rec.target = currentPieceOf(practice.task)?.target || rec.target || practice.task.target || 10
+    practice.byPiece = { ...keepByPiece({ byPiece: practice.byPiece }), [pieceId]: rec }
+  }
   practice.count = Math.max(0, practice.count + delta)
   syncCompleteFlag()
   await saveDay()
@@ -1128,13 +1408,14 @@ export async function toggleCheckOnDate(taskId, date) {
   const key = `day.${taskId}.${today}`
   const prev = (await db.kvGet(key)) || {}
   const completed = Boolean(prev.completedAt) || prev.count > 0
-  await db.kvSet(key, {
-    count: completed ? 0 : 1,
-    target: null,
-    completedAt: completed ? null : new Date().toISOString(),
-    subtasks: prev.subtasks || {},
-    updatedAt: new Date().toISOString(),
-  })
+  await db.kvSet(
+    key,
+    dayRecord(prev, {
+      count: completed ? 0 : 1,
+      target: null,
+      completedAt: completed ? null : new Date().toISOString(),
+    }),
+  )
   await refreshTodayMap()
   notifyCloud()
   return true
@@ -1148,6 +1429,7 @@ export async function addFiles(role, fileList, taskId) {
     role === 'sheet' ? practice.sheets : role === 'note' ? practice.notes : practice.helperImages
   let order = existing.reduce((max, item) => Math.max(max, item.order || 0), 0)
   const added = []
+  const owner = practice.tasks.find((item) => item.id === id) || practice.task
 
   for (const file of files) {
     try {
@@ -1165,6 +1447,7 @@ export async function addFiles(role, fileList, taskId) {
         createdAt: now,
         updatedAt: now,
         order,
+        pieceId: role === 'sheet' ? String(owner?.currentPieceId || '') : '',
         blob: packed.blob,
         thumbBlob: packed.thumbBlob,
       }
@@ -1196,4 +1479,50 @@ export async function reloadAll() {
   await loadJournals()
   await loadTaskNotes()
   practice.lastBackupAt = (await db.kvGet('lastBackupAt')) || ''
+}
+
+export async function setCurrentPiece(pieceId) {
+  const task = practice.tasks.find((item) => item.id === practice.task.id)
+  if (!task) return false
+  const id = String(pieceId || '')
+  if (id && !(task.pieces || []).some((item) => item.id === id)) return false
+  task.currentPieceId = id
+  Object.assign(task, normalizeTask(task))
+  practice.task = task
+  stampTask(task)
+  await saveTasks()
+  return true
+}
+
+export async function addPiece(title, target) {
+  const task = practice.tasks.find((item) => item.id === practice.task.id)
+  if (!task) return null
+  const pieces = Array.isArray(task.pieces) ? task.pieces : []
+  const name = String(title || '').trim() || `第${pieces.length + 1}首`
+  const n = Math.round(Number(target ?? task.target ?? 10))
+  const piece = {
+    id: uid('p'),
+    title: name,
+    target: Number.isFinite(n) && n >= 1 && n <= 999 ? n : 10,
+  }
+  task.pieces = [...pieces, piece]
+  task.currentPieceId = piece.id
+  Object.assign(task, normalizeTask(task))
+  practice.task = task
+  stampTask(task)
+  await saveTasks()
+  return piece
+}
+
+export async function assignSheetPiece(assetId, pieceId) {
+  const item = await db.assetGet(assetId)
+  if (!item || item.role !== 'sheet') return false
+  await db.assetPut({
+    ...item,
+    pieceId: String(pieceId || ''),
+    updatedAt: new Date().toISOString(),
+  })
+  await loadAssets()
+  notifyCloud()
+  return true
 }

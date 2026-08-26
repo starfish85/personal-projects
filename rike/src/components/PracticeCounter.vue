@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { bump, done, practice } from '../stores/practice'
+import { bump, done, pieceProgress, practice } from '../stores/practice'
 import { tapPulse } from '../utils/date'
 
 defineProps({
@@ -8,9 +8,12 @@ defineProps({
 })
 defineEmits(['edit-target'])
 
+const progress = computed(() => pieceProgress(practice.task, practice.todayByTask[practice.task.id]))
+
 const label = computed(() => {
-  if (!done.value) return `${practice.count} / ${practice.task.target}`
-  return `已完成 · ${practice.count}/${practice.task.target}`
+  const { count, target } = progress.value
+  if (!done.value) return `${count} / ${target}`
+  return `已完成 · ${count}/${target}`
 })
 
 async function plus() {
@@ -19,7 +22,7 @@ async function plus() {
 }
 
 async function minus() {
-  if (practice.count <= 0) return
+  if (progress.value.count <= 0) return
   await bump(-1)
 }
 </script>
@@ -34,7 +37,7 @@ async function minus() {
       练完一遍
     </button>
     <div v-if="variant === 'hero'" class="row">
-      <button class="ghost" type="button" :disabled="practice.count <= 0" @click="minus">
+      <button class="ghost" type="button" :disabled="progress.count <= 0" @click="minus">
         −1
       </button>
       <button class="ghost" type="button" @click="$emit('edit-target')">改目标</button>

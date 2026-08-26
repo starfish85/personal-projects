@@ -5,7 +5,19 @@ import NotesOverlay from '../components/NotesOverlay.vue'
 import PracticeCounter from '../components/PracticeCounter.vue'
 import SheetViewer from '../components/SheetViewer.vue'
 import * as db from '../db'
-import { addFiles, notifyCloud, openTask, practice, removeAsset, setInk, studio } from '../stores/practice'
+import {
+  addFiles,
+  addPiece,
+  assignSheetPiece,
+  currentPieceOf,
+  notifyCloud,
+  openTask,
+  practice,
+  removeAsset,
+  setCurrentPiece,
+  setInk,
+  studio,
+} from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 
 defineOptions({ name: 'Sheet' })
@@ -24,12 +36,24 @@ const fileRef = ref(null)
 const strokes = ref([])
 const redoStack = ref([])
 const toolsOpen = ref(false)
+const pieceOpen = ref(false)
+const pieceNaming = ref(false)
+const pieceDraft = ref('')
 
 const page = computed(() => practice.sheets[studio.sheetIndex] || null)
 const pageLabel = computed(() => {
   if (!practice.sheets.length) return '0/0'
   return `${studio.sheetIndex + 1}/${practice.sheets.length}`
 })
+const hasSheets = computed(() => practice.sheets.length > 0)
+const isCounter = computed(() => practice.task.completion === 'counter')
+const currentPiece = computed(() => currentPieceOf(practice.task))
+const pieceName = computed(() => currentPiece.value?.title || '未分组')
+const pieceList = computed(() => [
+  { id: '', title: '未分组' },
+  ...(Array.isArray(practice.task.pieces) ? practice.task.pieces : []),
+])
+const emptyTitle = computed(() => practice.task.title || '曲谱')
 
 function fallbackSheetPath() {
   const current = practice.tasks.find((item) => item.id === practice.task.id)
@@ -159,6 +183,36 @@ function setMode(mode) {
 
 function hideTools() {
   toolsOpen.value = false
+  pieceOpen.value = false
+  pieceNaming.value = false
+}
+
+function openPieces() {
+  if (!hasSheets.value) return
+  pieceOpen.value = true
+  pieceNaming.value = false
+  pieceDraft.value = ''
+}
+
+async function choosePiece(id) {
+  await setCurrentPiece(id)
+  if (page.value) await assignSheetPiece(page.value.id, id)
+  pieceOpen.value = false
+  pieceNaming.value = false
+}
+
+function startNewPiece() {
+  const n = (practice.task.pieces || []).length + 1
+  pieceDraft.value = `第${n}首`
+  pieceNaming.value = true
+}
+
+async function confirmNewPiece() {
+  const piece = await addPiece(pieceDraft.value)
+  if (piece && page.value) await assignSheetPiece(page.value.id, piece.id)
+  pieceOpen.value = false
+  pieceNaming.value = false
+  pieceDraft.value = ''
 }
 
 function onPen() {
@@ -208,11 +262,11 @@ onBeforeRouteLeave(() => {
   <main class="sheet">
     <header class="hud top">
       <button type="button" class="hud-btn" @click="goHome">返回</button>
-      <span class="page-no">{{ pageLabel }}</span>
-      <PracticeCounter v-if="practice.task.completion === 'counter'" variant="pill" />
-      <button type="button" class="hud-btn" @click="toolsOpen = !toolsOpen">
-        {{ toolsOpen ? '收起' : '工具' }}
+      <button v-if="hasSheets" type="button" class="hud-now" @click="openPieces">
+        <span v-if="currentPiece || (practice.task.pieces || []).length" class="now-name">{{ pieceName }}</span>
+        <span class="page-no">{{ pageLabel }}</span>
       </button>
+      <span v-else class="hud-title">{{ emptyTitle }}</span>
       <button type="button" class="hud-btn accent" @click="studio.notesOpen = true">笔记</button>
     </header>
 
@@ -240,65 +294,96 @@ onBeforeRouteLeave(() => {
       @gesture="onGesture"
     />
 
-    <footer v-if="practice.sheets.length && toolsOpen" class="hud bottom">
-      <div class="modes">
-        <button type="button" :class="{ on: studio.mode === 'pan' }" @click="setMode('pan')">浏览</button>
-        <button type="button" :class="{ on: studio.mode === 'pen' }" @click="setMode('pen')">画笔</button>
-        <button type="button" :class="{ on: studio.mode === 'eraser' }" @click="setMode('eraser')">橡皮</button>
-        <button type="button" :class="{ on: studio.ink === 'finger' }" @click="useFinger">手指</button>
-        <button type="button" :class="{ on: studio.ink === 'pencil' }" @click="usePencil">笔</button>
-        <button type="button" @click="zoom(1 / 1.25)">−</button>
-        <button type="button" @click="zoom(1.25)">+</button>
-        <button type="button" @click="hideTools">收起</button>
+    <footer v-if="hasSheets" class="hud bottom">
+      <div v-if="toolsOpen" class="tools-stack">
+        <div class="modes">
+          <button type="button" :class="{ on: studio.mode === 'pan' }" @click="setMode('pan')">浏览</button>
+          <button type="button" :class="{ on: studio.mode === 'pen' }" @click="setMode('pen')">画笔</button>
+          <button type="button" :class="{ on: studio.mode === 'eraser' }" @click="setMode('eraser')">橡皮</button>
+          <button type="button" :class="{ on: studio.ink === 'finger' }" @click="useFinger">手指</button>
+          <button type="button" :class="{ on: studio.ink === 'pencil' }" @click="usePencil">笔</button>
+          <button type="button" @click="zoom(1 / 1.25)">−</button>
+          <button type="button" @click="zoom(1.25)">+</button>
+          <button type="button" @click="hideTools">收起</button>
+        </div>
+
+        <div class="tools">
+          <button
+            v-for="color in COLORS"
+            :key="color"
+            type="button"
+            class="swatch"
+            :class="{ on: studio.color === color }"
+            :style="{ background: color }"
+            @click="studio.color = color; studio.mode = 'pen'"
+          />
+          <button
+            v-for="item in WIDTHS"
+            :key="item.key"
+            type="button"
+            class="chip"
+            :class="{ on: studio.width === item.value }"
+            @click="studio.width = item.value"
+          >
+            {{ item.label }}
+          </button>
+          <button type="button" class="chip" @click="undo">撤销</button>
+          <button type="button" class="chip" @click="redo">恢复</button>
+          <button type="button" class="chip" @click="clearPage">清空</button>
+          <button type="button" class="chip" @click="pick">加页</button>
+        </div>
+
+        <div class="thumbs">
+          <button
+            v-for="(item, i) in practice.sheets"
+            :key="item.id"
+            type="button"
+            class="thumb"
+            :class="{ on: i === studio.sheetIndex }"
+            @click="studio.sheetIndex = i"
+          >
+            <img :src="item.thumbUrl" alt="" />
+          </button>
+          <button
+            v-if="page"
+            type="button"
+            class="kill"
+            @click="removePage(studio.sheetIndex)"
+          >
+            删页
+          </button>
+        </div>
       </div>
 
-      <div class="tools">
-        <button
-          v-for="color in COLORS"
-          :key="color"
-          type="button"
-          class="swatch"
-          :class="{ on: studio.color === color }"
-          :style="{ background: color }"
-          @click="studio.color = color; studio.mode = 'pen'"
-        />
-        <button
-          v-for="item in WIDTHS"
-          :key="item.key"
-          type="button"
-          class="chip"
-          :class="{ on: studio.width === item.value }"
-          @click="studio.width = item.value"
-        >
-          {{ item.label }}
-        </button>
-        <button type="button" class="chip" @click="undo">撤销</button>
-        <button type="button" class="chip" @click="redo">恢复</button>
-        <button type="button" class="chip" @click="clearPage">清空</button>
-        <button type="button" class="chip" @click="pick">加页</button>
-      </div>
-
-      <div class="thumbs">
-        <button
-          v-for="(item, i) in practice.sheets"
-          :key="item.id"
-          type="button"
-          class="thumb"
-          :class="{ on: i === studio.sheetIndex }"
-          @click="studio.sheetIndex = i"
-        >
-          <img :src="item.thumbUrl" alt="" />
-        </button>
-        <button
-          v-if="page"
-          type="button"
-          class="kill"
-          @click="removePage(studio.sheetIndex)"
-        >
-          删页
+      <div class="dock">
+        <PracticeCounter v-if="isCounter" variant="pill" />
+        <button type="button" class="hud-btn dock-tools" @click="toolsOpen = !toolsOpen">
+          {{ toolsOpen ? '收起' : '工具' }}
         </button>
       </div>
     </footer>
+
+    <div v-if="pieceOpen" class="piece-mask" @click.self="pieceOpen = false">
+      <div class="piece-sheet">
+        <h2>当前曲</h2>
+        <button
+          v-for="item in pieceList"
+          :key="item.id || 'ungrouped'"
+          type="button"
+          class="piece-row"
+          :class="{ on: String(practice.task.currentPieceId || '') === String(item.id || '') }"
+          @click="choosePiece(item.id)"
+        >
+          {{ item.title }}
+        </button>
+        <form v-if="pieceNaming" class="piece-form" @submit.prevent="confirmNewPiece">
+          <input v-model="pieceDraft" maxlength="20" placeholder="曲名" />
+          <button class="btn btn-primary" type="submit">添加</button>
+        </form>
+        <button v-else type="button" class="piece-row add" @click="startNewPiece">新的一首</button>
+        <button type="button" class="piece-cancel" @click="pieceOpen = false">取消</button>
+      </div>
+    </div>
 
     <NotesOverlay
       :open="studio.notesOpen"
@@ -342,14 +427,45 @@ onBeforeRouteLeave(() => {
   background: linear-gradient(to bottom, rgba(14, 12, 10, 0.78), transparent);
 }
 
+.hud-title,
+.hud-now {
+  flex: 1;
+  min-width: 0;
+  color: var(--paper);
+  text-align: center;
+}
+
+.hud-title {
+  font-weight: 650;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-now {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 40px;
+  justify-content: center;
+}
+
+.now-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+  font-size: 14px;
+}
+
 .page-no {
   color: var(--paper);
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
-}
-
-.top :deep(.counter) {
-  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.82;
 }
 
 .hud-btn {
@@ -361,6 +477,7 @@ onBeforeRouteLeave(() => {
 
 .hud-btn.accent {
   color: var(--amber);
+  margin-left: 0;
 }
 
 .empty {
@@ -390,6 +507,95 @@ onBeforeRouteLeave(() => {
   bottom: 0;
   padding: 8px 10px calc(8px + var(--safe-bottom));
   background: linear-gradient(to top, rgba(14, 12, 10, 0.88), transparent);
+}
+
+.dock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dock :deep(.counter) {
+  margin-right: auto;
+}
+
+.dock-tools {
+  margin-left: auto;
+}
+
+.tools-stack {
+  margin-bottom: 10px;
+}
+
+.piece-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  background: rgba(8, 6, 5, 0.46);
+  display: flex;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+
+.piece-sheet {
+  width: 100%;
+  padding: 18px 16px calc(16px + var(--safe-bottom));
+  border-radius: 22px 22px 0 0;
+  background: var(--bg-elev);
+  color: var(--text);
+}
+
+.piece-sheet h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+.piece-row,
+.piece-cancel {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 14px;
+  text-align: left;
+  font-weight: 650;
+}
+
+.piece-row {
+  margin-bottom: 8px;
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.piece-row.on {
+  background: var(--amber);
+  color: var(--ink);
+}
+
+.piece-row.add {
+  background: transparent;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+}
+
+.piece-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.piece-form input {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 14px;
+  background: var(--bg-soft);
+  color: var(--text);
+}
+
+.piece-cancel {
+  margin-top: 4px;
+  text-align: center;
+  color: var(--muted);
 }
 
 .modes,

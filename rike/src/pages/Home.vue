@@ -9,16 +9,22 @@ import {
   addTask,
   dayComplete,
   ensureToday,
+  pieceProgress,
+  hasJournal,
+  loadDaysByTask,
   openTask,
   pinTask,
   practice,
+  streakFor,
   quotaMessage,
   removeTask,
   restoreTask,
   subtaskDone,
+  taskLineOnDate,
   taskTodayLine,
   taskDoneToday,
   taskOnDate,
+  tasksForCalendarDate,
   tasksOnDate,
   toggleCheck,
   toggleSubtask,
@@ -34,7 +40,15 @@ import {
   dismissBackupNag,
   exportAndDownload,
 } from '../utils/backup'
-import { formatCoverDate, localDateKey, weekdayOf } from '../utils/date'
+import {
+  dateMode,
+  formatCoverDate,
+  formatDayTitle,
+  formatPracticeTime,
+  localDateKey,
+  shiftDateKey,
+  weekdayOf,
+} from '../utils/date'
 import { ensureNotifyPermission } from '../utils/remind'
 
 defineOptions({ name: 'Home' })
@@ -50,8 +64,19 @@ const openId = ref(null)
 const expandedId = ref(null)
 const saving = ref(false)
 const fromCalendarDate = ref('')
+const fromHomeDate = ref('')
 const backupNag = ref(false)
+const pickerOpen = ref(false)
+const pickerDraft = ref('')
+const daysByTask = ref({})
 const pageRef = ref(null)
+
+const todayKey = computed(() => practice.date || localDateKey())
+const viewingDate = computed(() => practice.viewingDate || todayKey.value)
+const viewMode = computed(() => dateMode(viewingDate.value, todayKey.value))
+const yesterdayKey = computed(() => shiftDateKey(todayKey.value, -1))
+const tomorrowKey = computed(() => shiftDateKey(todayKey.value, 1))
+const pickerTitle = computed(() => formatDayTitle(pickerDraft.value || viewingDate.value))
 const WEEKDAYS = [
   { value: 1, label: '一' },
   { value: 2, label: '二' },
@@ -124,9 +149,12 @@ function openAdd() {
   closeSwipe()
   form.title = ''
   form.reminder = ''
-  const date = String(route.query.date || localDateKey())
+  const date = String(
+    route.query.date || (viewMode.value === 'future' ? viewingDate.value : localDateKey()),
+  )
   form.dueDate = date
   fromCalendarDate.value = route.query.from === 'calendar' ? date : ''
+  fromHomeDate.value = !fromCalendarDate.value && viewMode.value === 'future' ? date : ''
   form.longTerm = false
   form.repeatWeekdays = []
   form.paused = false
@@ -161,6 +189,7 @@ function openEdit(task) {
   form.repeatWeekdays = Array.isArray(task.repeatWeekdays) ? [...task.repeatWeekdays] : []
   form.paused = Boolean(task.paused)
   fromCalendarDate.value = route.query.from === 'calendar' ? String(route.query.date || task.dueDate || '') : ''
+  fromHomeDate.value = ''
   form.template =
     TASK_TEMPLATES.find((item) => item.id === task.template)?.id ||
     TASK_TEMPLATES.find((item) => item.completion === task.completion)?.id ||
@@ -235,6 +264,7 @@ function finishClose({ calendarDate } = {}) {
   editorStep.value = 'details'
   saving.value = false
   fromCalendarDate.value = ''
+  fromHomeDate.value = ''
   expandedId.value = null
   if (calendarDate) {
     return router.replace({ path: '/calendar', query: { date: calendarDate } })
@@ -279,14 +309,16 @@ function skipBackupNag() {
   backupNag.value = false
 }
 
-onMounted(() => {
-  ensureToday()
+onMounted(async () => {
+  await ensureToday()
   openAddFromRoute()
   refreshBackupNag()
+  daysByTask.value = await loadDaysByTask()
 })
-onActivated(() => {
-  ensureToday()
+onActivated(async () => {
+  await ensureToday()
   refreshBackupNag()
+  daysByTask.value = await loadDaysByTask()
 })
 watch(() => [route.query.add, route.query.edit], openAddFromRoute)
 watch(() => [practice.ready, practice.lastBackupAt, cloud.user], refreshBackupNag)
@@ -325,6 +357,13 @@ async function saveEditor() {
       const task = await addTask(savePayload())
       if (!task) return
       if (form.reminder) await ensureNotifyPermission()
+      const homeDate = fromHomeDate.value
+      if (homeDate) {
+        practice.viewingDate = task.dueDate || homeDate
+        await finishClose()
+        toast(`已安排到 ${task.dueDate || form.dueDate}`)
+        return
+      }
       const visibleToday = taskOnDate(task, today)
       const goCalendar = calendarDate || (!visibleToday ? task.dueDate : '')
       const message = goCalendar ? `已安排到 ${task.dueDate || form.dueDate}` : '任务已创建'
@@ -363,23 +402,30 @@ async function deleteCurrent() {
 }
 
 function isDone(task) {
+  if (viewMode.value !== 'today') return false
   return dayComplete(task, practice.todayByTask[task.id])
 }
 
-function visibleTasks() {
-  return tasksOnDate(practice.date).sort((a, b) => {
+function sortVisible(a, b) {
+  if (viewMode.value === 'today') {
     const ad = taskDoneToday(a) ? 1 : 0
     const bd = taskDoneToday(b) ? 1 : 0
     if (ad !== bd) return ad - bd
-    const ap = a.pinned ? 1 : 0
-    const bp = b.pinned ? 1 : 0
-    if (ap !== bp) return bp - ap
-    if (ap && (a.pinnedAt || 0) !== (b.pinnedAt || 0)) return (b.pinnedAt || 0) - (a.pinnedAt || 0)
-    return (a.order ?? 0) - (b.order ?? 0)
-  })
+  }
+  const ap = a.pinned ? 1 : 0
+  const bp = b.pinned ? 1 : 0
+  if (ap !== bp) return bp - ap
+  if (ap && (a.pinnedAt || 0) !== (b.pinnedAt || 0)) return (b.pinnedAt || 0) - (a.pinnedAt || 0)
+  return (a.order ?? 0) - (b.order ?? 0)
 }
 
-const cover = computed(() => formatCoverDate(practice.date))
+function visibleTasks() {
+  const date = viewingDate.value
+  if (viewMode.value === 'past') return tasksForCalendarDate(date, daysByTask.value)
+  return [...tasksOnDate(date)].sort(sortVisible)
+}
+
+const cover = computed(() => formatCoverDate(viewingDate.value))
 
 function remainingCount() {
   return visibleTasks().filter((task) => !isDone(task)).length
@@ -387,10 +433,86 @@ function remainingCount() {
 
 function remainingCopy() {
   const total = visibleTasks().length
+  if (viewMode.value === 'past') return total ? '这天的记录' : '这天没有记录'
+  if (viewMode.value === 'future') return total ? `已安排 ${total} 课` : '这天还没有安排'
   const left = remainingCount()
   if (!total) return '今天没有安排'
   if (left === 0) return '今日已课'
   return `还剩 ${left} 课`
+}
+
+function taskViewLine(task) {
+  let line = ''
+  if (viewMode.value === 'today') {
+    line = `${taskTodayLine(task)}${task.reminder ? ` · ${task.reminder}` : ''}`
+  } else if (viewMode.value === 'future') {
+    line = '已安排'
+  } else {
+    const rec = daysByTask.value[task.id]?.[viewingDate.value]
+    line = taskLineOnDate(task, viewingDate.value, rec)
+  }
+  const rec =
+    viewMode.value === 'today'
+      ? practice.todayByTask[task.id]
+      : daysByTask.value[task.id]?.[viewingDate.value]
+  const time = formatPracticeTime(rec?.seconds)
+  if (time) line += ` · ${time}`
+  if (viewMode.value === 'today' && task.longTerm) {
+    const n = streakFor(task, todayKey.value, daysByTask.value)
+    if (n >= 2) line += ` · 已连续 ${n} 天`
+  }
+  return line
+}
+
+function emptyCopy() {
+  if (viewMode.value === 'future') return '这天还没有安排任务'
+  if (viewMode.value === 'past') return '这天没有任务记录'
+  return practice.tasks.length ? '今天没有安排的日课' : '今天还没有任务'
+}
+
+function modeHint() {
+  if (viewMode.value === 'past') return '过去不能补打卡。下面是这天做了什么。'
+  if (viewMode.value === 'future') return '还没到这一天。只能安排，不能打卡。'
+  return ''
+}
+
+function journalPreview() {
+  const text = (practice.journalTexts[viewingDate.value] || '').trim()
+  if (text) return text.split('\n')[0]
+  if (hasJournal(viewingDate.value)) return '有图片'
+  return '未写'
+}
+
+function journalCta() {
+  return hasJournal(viewingDate.value) ? '打开日记' : '写日记'
+}
+
+function openPicker() {
+  pickerDraft.value = viewingDate.value
+  pickerOpen.value = true
+}
+
+function closePicker() {
+  pickerOpen.value = false
+}
+
+async function setViewingDate(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return
+  practice.viewingDate = dateKey
+  pickerOpen.value = false
+  closeSwipe()
+  expandedId.value = null
+  if (pageRef.value) pageRef.value.scrollTop = 0
+  if (dateMode(dateKey) === 'past') daysByTask.value = await loadDaysByTask()
+}
+
+async function goToday() {
+  await setViewingDate(todayKey.value)
+}
+
+async function onPickerDate(event) {
+  const value = event.target.value
+  if (value) await setViewingDate(value)
 }
 
 function featuredTask() {
@@ -409,12 +531,25 @@ function restTasks() {
 
 function counterOf(task) {
   if (task.completion !== 'counter') return null
-  const rec = practice.todayByTask[task.id]
-  return { count: rec?.count || 0, target: task.target || 10 }
+  if (viewMode.value === 'future') return { count: 0, target: task.target || 10 }
+  const rec =
+    viewMode.value === 'past'
+      ? daysByTask.value[task.id]?.[viewingDate.value]
+      : practice.todayByTask[task.id]
+  const progress = pieceProgress(task, rec)
+  return { count: progress.count, target: progress.target }
+}
+
+function featureKicker() {
+  if (viewMode.value === 'past') return isDone(featured.value) ? '这天主课 · 已完成' : '这天主课'
+  if (viewMode.value === 'future') return '将做'
+  return isDone(featured.value) ? '今日主课 · 已完成' : '今日主课'
 }
 
 function featureCta(task) {
   if (!task) return '打开'
+  if (viewMode.value === 'past') return hasSubtasks(task) ? '查看' : '只读'
+  if (viewMode.value === 'future') return '改安排'
   if (isDone(task)) return '回看今天'
   if (task.completion === 'counter' && (task.sheet || task.components?.includes('sheet'))) {
     return '打开曲谱'
@@ -434,11 +569,15 @@ function onFeatureClick(task) {
     closeSwipe()
     return
   }
+  if (viewMode.value === 'past') {
+    if (hasSubtasks(task)) expandedId.value = expandedId.value === task.id ? null : task.id
+    return
+  }
+  if (viewMode.value === 'future') {
+    openEdit(task)
+    return
+  }
   router.push(`/task/${task.id}`)
-}
-
-function emptyCopy() {
-  return practice.tasks.length ? '今天没有安排的日课' : '今天还没有任务'
 }
 
 function archivedTasks() {
@@ -475,6 +614,7 @@ function dragging(id) {
 }
 
 function onDown(event, task) {
+  if (viewMode.value === 'past') return
   if (event.pointerType === 'mouse' && event.button !== 0) return
   if (openId.value && openId.value !== task.id) openId.value = null
   drag.id = task.id
@@ -538,6 +678,18 @@ function onCardClick(task) {
     closeSwipe()
     return
   }
+  if (viewMode.value === 'past') {
+    if (hasSubtasks(task)) expandedId.value = expandedId.value === task.id ? null : task.id
+    return
+  }
+  if (viewMode.value === 'future') {
+    if (hasSubtasks(task)) {
+      expandedId.value = expandedId.value === task.id ? null : task.id
+      return
+    }
+    openEdit(task)
+    return
+  }
   if (hasSubtasks(task)) {
     expandedId.value = expandedId.value === task.id ? null : task.id
     return
@@ -546,6 +698,7 @@ function onCardClick(task) {
 }
 
 async function quickCheck(task) {
+  if (viewMode.value !== 'today') return
   if (consumeSkip()) return
   closeSwipe()
   await openTask(task.id)
@@ -574,7 +727,13 @@ async function restoreFromArchive(task) {
   if (!managedTasks().length) archiveOpen.value = false
 }
 
+function pastSubDone(task, subtask) {
+  if (viewMode.value === 'today') return subtaskDone(task.id, subtask.id)
+  return Boolean(daysByTask.value[task.id]?.[viewingDate.value]?.subtasks?.[subtask.id])
+}
+
 async function toggleSub(task, subtask) {
+  if (viewMode.value !== 'today') return
   closeSwipe()
   await toggleSubtask(task.id, subtask.id)
 }
@@ -586,6 +745,9 @@ async function toggleSub(task, subtask) {
       <div class="cover-top">
         <p class="brand">日课</p>
         <div class="head-actions">
+          <button v-if="viewMode !== 'today'" type="button" class="archive-btn" @click="goToday">
+            回今天
+          </button>
           <button
             v-if="managedTasks().length"
             type="button"
@@ -596,11 +758,18 @@ async function toggleSub(task, subtask) {
           </button>
         </div>
       </div>
-      <p class="cover-kicker">{{ cover.month }}</p>
-      <p class="cover-day">{{ cover.day }}</p>
-      <p class="cover-cap">{{ cover.weekday }} · {{ remainingCopy() }}</p>
+      <button
+        type="button"
+        class="cover-date"
+        :class="{ away: viewMode !== 'today' }"
+        :aria-label="`切换查看日期，当前 ${viewingDate}`"
+        @click="openPicker"
+      >
+        <span class="cover-kicker">{{ cover.month }}</span>
+        <span class="cover-day">{{ cover.day }}</span>
+        <span class="cover-cap">{{ cover.weekday }} · {{ remainingCopy() }}</span>
+      </button>
     </header>
-    <SyncBar />
 
     <article v-if="backupNag" class="backup-nag">
       <p>曲谱和打卡图还没备份，清微信缓存会丢。</p>
@@ -609,6 +778,8 @@ async function toggleSub(task, subtask) {
         <button type="button" class="later" @click="skipBackupNag">稍后</button>
       </div>
     </article>
+
+    <p v-if="modeHint()" class="mode-hint">{{ modeHint() }}</p>
 
     <section class="links">
       <p v-if="!visibleTasks().length" class="empty">{{ emptyCopy() }}</p>
@@ -635,7 +806,7 @@ async function toggleSub(task, subtask) {
           @pointercancel="onUp"
           @click="onFeatureClick(featured)"
         >
-          <em>{{ isDone(featured) ? '今日主课 · 已完成' : '今日主课' }}</em>
+          <em>{{ featureKicker() }}</em>
           <b v-if="isDone(featured)" class="seal">印</b>
           <strong>
             {{ featured.title }}
@@ -644,9 +815,7 @@ async function toggleSub(task, subtask) {
           <p v-if="counterOf(featured)" class="feature-count">
             {{ counterOf(featured).count }} / {{ counterOf(featured).target }}
           </p>
-          <span class="feature-line">
-            {{ taskTodayLine(featured) }}{{ featured.reminder ? ` · ${featured.reminder}` : '' }}
-          </span>
+          <span class="feature-line">{{ taskViewLine(featured) }}</span>
           <div class="feature-go">{{ featureCta(featured) }}</div>
         </div>
       </div>
@@ -681,7 +850,7 @@ async function toggleSub(task, subtask) {
               {{ task.title }}
               <span v-if="task.pinned" class="pin-mark">置顶</span>
             </strong>
-            <span>{{ taskTodayLine(task) }}{{ task.reminder ? ` · ${task.reminder}` : '' }}</span>
+            <span>{{ taskViewLine(task) }}</span>
           </div>
           <button
             v-if="hasSubtasks(task)"
@@ -693,7 +862,7 @@ async function toggleSub(task, subtask) {
             {{ expandedId === task.id ? '收起' : '展开' }}
           </button>
           <button
-            v-if="task.completion === 'check'"
+            v-if="viewMode === 'today' && task.completion === 'check'"
             class="tick"
             :class="{ on: isDone(task) }"
             type="button"
@@ -718,7 +887,7 @@ async function toggleSub(task, subtask) {
             :key="subtask.id"
             type="button"
             class="subtask"
-            :class="{ on: subtaskDone(task.id, subtask.id) }"
+            :class="{ on: pastSubDone(task, subtask) }"
             @click="toggleSub(task, subtask)"
           >
             <i />
@@ -728,7 +897,28 @@ async function toggleSub(task, subtask) {
       </div>
     </section>
 
-    <button type="button" class="fab" aria-label="添加任务" @click="openAdd">
+    <button
+      v-if="viewMode !== 'future'"
+      type="button"
+      class="journal-row"
+      @click="router.push(`/journal/${viewingDate}`)"
+    >
+      <span>
+        <strong>日记</strong>
+        <em>{{ journalPreview() }}</em>
+      </span>
+      <i>{{ journalCta() }}</i>
+    </button>
+
+    <SyncBar />
+
+    <button
+      v-if="viewMode !== 'past'"
+      type="button"
+      class="fab"
+      :aria-label="viewMode === 'future' ? '安排任务' : '添加任务'"
+      @click="openAdd"
+    >
       <span>+</span>
     </button>
 
@@ -771,7 +961,7 @@ async function toggleSub(task, subtask) {
           <p v-if="editor.mode === 'add' && form.dueDate !== practice.date" class="modal-copy">
             安排到 {{ form.dueDate }}
           </p>
-          <p v-if="fromCalendarDate && editor.mode === 'edit'" class="modal-copy">
+          <p v-if="(fromCalendarDate || viewMode === 'future') && editor.mode === 'edit'" class="modal-copy">
             这里改的是整条任务，不是只改这一天。
           </p>
           <input v-model="form.title" class="field" type="text" maxlength="20" placeholder="名称" />
@@ -915,6 +1105,28 @@ async function toggleSub(task, subtask) {
       </div>
     </div>
 
+    <div v-if="pickerOpen" class="modal-mask" @click.self="closePicker">
+      <div class="modal-sheet">
+        <h2 class="modal-title">看哪一天</h2>
+        <div class="picker-chips">
+          <button type="button" :class="{ on: viewingDate === yesterdayKey }" @click="setViewingDate(yesterdayKey)">
+            昨天
+          </button>
+          <button type="button" :class="{ on: viewingDate === todayKey }" @click="setViewingDate(todayKey)">
+            今天
+          </button>
+          <button type="button" :class="{ on: viewingDate === tomorrowKey }" @click="setViewingDate(tomorrowKey)">
+            明天
+          </button>
+        </div>
+        <label class="picker-date">
+          <span>选择日期</span>
+          <input :value="viewingDate" type="date" @change="onPickerDate" />
+        </label>
+        <p class="modal-copy">{{ pickerTitle }}</p>
+      </div>
+    </div>
+
     <TimePicker v-model="form.reminder" :open="timeOpen" @close="timeOpen = false" />
   </main>
 </template>
@@ -944,14 +1156,25 @@ async function toggleSub(task, subtask) {
   color: var(--paper);
 }
 
+.cover-date {
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  padding: 0;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+}
+
 .cover-kicker {
-  margin: 22px 0 0;
+  display: block;
   color: var(--muted);
   font-size: var(--fs-sm);
   letter-spacing: 0.22em;
 }
 
 .cover-day {
+  display: block;
   margin: 2px 0 0;
   font-size: 76px;
   line-height: 0.88;
@@ -959,10 +1182,93 @@ async function toggleSub(task, subtask) {
   letter-spacing: 0.06em;
 }
 
+.cover-date.away .cover-day {
+  color: var(--amber);
+}
+
 .cover-cap {
+  display: block;
   margin: 10px 0 0;
   color: var(--muted);
   font-size: var(--fs-sm);
+}
+
+.mode-hint {
+  margin: 16px 2px 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.journal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  text-align: left;
+}
+
+.journal-row strong,
+.journal-row em {
+  display: block;
+}
+
+.journal-row em {
+  margin-top: 4px;
+  color: var(--muted);
+  font-style: normal;
+  font-size: var(--fs-sm);
+}
+
+.journal-row i {
+  font-style: normal;
+  color: var(--amber);
+  font-weight: 650;
+}
+
+.picker-chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.picker-chips button {
+  min-height: var(--tap);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.picker-chips button.on {
+  background: var(--amber);
+  color: var(--ink);
+}
+
+.picker-date {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.picker-date input {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
 }
 
 .feature-card {
@@ -1044,11 +1350,12 @@ async function toggleSub(task, subtask) {
 }
 
 .act.edit {
-  background: #6b8498;
+  background: var(--bg-soft);
+  color: var(--paper);
 }
 
 .act.del {
-  background: var(--danger);
+  background: var(--seal);
 }
 
 .act.pin {
@@ -1065,7 +1372,6 @@ async function toggleSub(task, subtask) {
   text-align: left;
   padding: var(--card-pad);
   background: var(--bg-elev);
-  box-shadow: inset 3px 0 0 var(--task, var(--amber));
   touch-action: pan-y;
   transition: transform 0.22s ease;
   user-select: none;
