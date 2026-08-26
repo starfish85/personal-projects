@@ -2,7 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { getCloudConfig, setCloudConfig } from '../cloud/client'
 import { currentPushOn, enablePush, pushSupported } from '../cloud/push'
-import { cloud, fullSync, sendLogin, signOut } from '../stores/sync'
+import { cloud, completeLoginFromPaste, fullSync, sendLogin, signOut } from '../stores/sync'
 import { confirmDialog, toast } from '../stores/ui'
 import { backupFileName, exportAndDownload, importBackup } from '../utils/backup'
 
@@ -14,6 +14,7 @@ const open = ref(!config && !cloud.user)
 const email = ref(cloud.email)
 const sent = ref(false)
 const loginBusy = ref(false)
+const pasted = ref('')
 const form = reactive({
   url: config?.url || '',
   anonKey: config?.anonKey || '',
@@ -59,6 +60,16 @@ async function login() {
       sent.value = true
       open.value = true
     }
+  } finally {
+    loginBusy.value = false
+  }
+}
+
+async function loginWithPaste() {
+  if (loginBusy.value) return
+  loginBusy.value = true
+  try {
+    await completeLoginFromPaste(pasted.value, email.value)
   } finally {
     loginBusy.value = false
   }
@@ -125,9 +136,20 @@ async function onImport(event) {
         <button class="btn btn-primary" type="button" :disabled="loginBusy" @click="login">
           {{ loginBusy && !sent ? '发送中' : '发送登录邮件' }}
         </button>
-        <p v-if="sent" class="hint">
-          打开邮箱，点邮件里的 Sign in。打开后应进入日课，并出现「已登录」。
-        </p>
+        <template v-if="sent">
+          <textarea
+            v-model="pasted"
+            class="area paste"
+            rows="3"
+            placeholder="长按邮件里的 Sign in → 复制链接 → 粘贴到这里"
+          />
+          <button class="btn btn-primary" type="button" :disabled="loginBusy" @click="loginWithPaste">
+            {{ loginBusy ? '登录中' : '用这个链接登录' }}
+          </button>
+          <p class="hint">
+            发邮件本身不会登录。不要点开链接（微信里会丢）。长按蓝色 Sign in，复制，粘贴回这个页面。
+          </p>
+        </template>
       </template>
       <template v-else>
         <p class="mail">{{ cloud.email }}</p>
@@ -239,6 +261,12 @@ async function onImport(event) {
 
 .push-btn {
   width: 100%;
+}
+
+.paste {
+  min-height: 72px;
+  margin: 0;
+  font-size: 14px;
 }
 
 .hint {

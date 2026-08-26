@@ -329,43 +329,124 @@ export async function sendLogin(email) {
     toast(error.message || '发送失败')
     return false
   }
-  toast('邮件已发出。打开邮件，点 Sign in。')
+  toast('邮件已发出。请长按复制 Sign in 链接，粘贴回这个页面。')
   return true
 }
 
-export async function verifyLoginCode(email, token) {
+async function afterSignedIn(email) {
+  const {
+    data: { session },
+  } = await getClient().auth.getSession()
+  cloud.user = session?.user || null
+  cloud.email = session?.user?.email || email || ''
+  cloud.error = ''
+  toast('已登录')
+  if (session) await fullSync()
+  return Boolean(session)
+}
+
+async function verifyToken(email, token, type) {
+  const client = getClient()
+  const { error } = await client.auth.verifyOtp({
+    email,
+    token,
+    type,
+  })
+  if (error) return error
+  await afterSignedIn(email)
+  return null
+}
+
+export async function completeLoginFromPaste(raw, email) {
   const client = getClient()
   if (!client) {
     toast('先填写云项目')
     return false
   }
-  const address = String(email || '').trim()
-  const code = String(token || '').trim()
-  if (!address) {
-    toast('先填写邮箱')
+  const text = String(raw || '').trim()
+  const address = String(email || cloud.email || '').trim()
+  if (!text) {
+    toast('把邮件里的 Sign in 链接粘贴进来')
     return false
   }
-  if (!code) {
-    toast('填邮件里的验证码')
+  if (/^\d{6,8}$/.test(text)) {
+    if (!address) {
+      toast('先填邮箱')
+      return false
+    }
+    const first = await verifyToken(address, text, 'email')
+    if (!first) return true
+    const second = await verifyToken(address, text, 'magiclink')
+    if (second) {
+      toast(second.message || '验证码不对')
+      return false
+    }
+    return true
+  }
+
+  let url
+  try {
+    url = new URL(text)
+  } catch {
+    toast('请粘贴完整链接，从 https 开头')
     return false
   }
-  const { error } = await client.auth.verifyOtp({
-    email: address,
-    token: code,
-    type: 'email',
-  })
-  if (error) {
-    toast(error.message || '验证码不对')
-    return false
+
+  const params = new URLSearchParams(url.search)
+  const hash = new URLSearchParams(String(url.hash || '').replace(/^#/, ''))
+  const accessToken = hash.get('access_token') || params.get('access_token')
+  const refreshToken = hash.get('refresh_token') || params.get('refresh_token')
+  if (accessToken && refreshToken) {
+    const { error } = await client.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    })
+    if (error) {
+      toast(error.message || '登录失败')
+      return false
+    }
+    return afterSignedIn(address)
   }
-  const {
-    data: { session },
-  } = await client.auth.getSession()
-  cloud.user = session?.user || null
-  cloud.email = session?.user?.email || address
-  toast('已登录')
-  if (session) await fullSync()
-  return true
+
+  const code = params.get('code')
+  if (code) {
+    const { error } = await client.auth.exchangeCodeForSession(text)
+    if (error) {
+      toast(error.message || '这个链接要粘贴回发送邮件的那个日课页面')
+      return false
+    }
+    return afterSignedIn(address)
+  }
+
+  const tokenHash = params.get('token_hash') || hash.get('token_hash')
+  if (tokenHash) {
+    const type = params.get('type') || hash.get('type') || 'email'
+    const { error } = await client.auth.verifyOtp({ token_hash: tokenHash, type })
+    if (error) {
+      toast(error.message || '登录失败')
+      return false
+    }
+    return afterSignedIn(address)
+  }
+
+  const token = params.get('token')
+  if (token) {
+    if (!address) {
+      toast('先填邮箱，再粘贴链接')
+      return false
+    }
+    const first = await verifyToken(address, token, 'email')
+    if (!first) return true
+    const second = await verifyToken(address, token, 'magiclink')
+    if (second) {
+      toast(second.message || '链接无效，再发一封试试')
+      return false
+    }
+    return true
+  }
+
+  toast('没从链接里读到登录信息，把 Sign in 的完整链接贴过来')
+  return false
 }
 
 export async function signOut() {

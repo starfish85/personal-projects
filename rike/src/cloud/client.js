@@ -69,7 +69,7 @@ export function getClient() {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: false,
-        flowType: 'implicit',
+        flowType: 'pkce',
       },
     })
     bound = stamp
