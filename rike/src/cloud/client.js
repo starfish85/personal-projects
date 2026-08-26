@@ -42,6 +42,7 @@ export function getClient() {
 }
 
 export function redirectTo() {
-  const path = location.pathname.replace(/index\.html$/, '')
-  return `${location.origin}${path}`
+  const clean = `${location.origin}${location.pathname}`.replace(/index\.html$/i, '')
+  const withSlash = clean.endsWith('/') ? clean : `${clean}/`
+  return `${withSlash}index.html`
 }

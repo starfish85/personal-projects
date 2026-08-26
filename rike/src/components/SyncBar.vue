@@ -2,7 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { getCloudConfig, setCloudConfig } from '../cloud/client'
 import { currentPushOn, enablePush, pushSupported } from '../cloud/push'
-import { cloud, fullSync, sendLogin, signOut } from '../stores/sync'
+import { cloud, fullSync, sendLogin, signOut, verifyLoginCode } from '../stores/sync'
 import { confirmDialog, toast } from '../stores/ui'
 import { backupFileName, exportAndDownload, importBackup } from '../utils/backup'
 
@@ -12,6 +12,9 @@ const backupBusy = ref(false)
 const config = getCloudConfig()
 const open = ref(!config && !cloud.user)
 const email = ref(cloud.email)
+const otp = ref('')
+const sent = ref(false)
+const loginBusy = ref(false)
 const form = reactive({
   url: config?.url || '',
   anonKey: config?.anonKey || '',
@@ -49,8 +52,27 @@ function saveConfig() {
 }
 
 async function login() {
-  const ok = await sendLogin(email.value)
-  if (ok) open.value = false
+  if (loginBusy.value) return
+  loginBusy.value = true
+  try {
+    const ok = await sendLogin(email.value)
+    if (ok) {
+      sent.value = true
+      open.value = true
+    }
+  } finally {
+    loginBusy.value = false
+  }
+}
+
+async function confirmCode() {
+  if (loginBusy.value) return
+  loginBusy.value = true
+  try {
+    await verifyLoginCode(email.value, otp.value)
+  } finally {
+    loginBusy.value = false
+  }
 }
 
 async function doExport() {
@@ -110,8 +132,27 @@ async function onImport(event) {
         <button class="btn btn-primary" type="button" @click="saveConfig">保存云项目</button>
       </template>
       <template v-else-if="!cloud.user">
-        <input v-model="email" class="field slim" type="email" placeholder="邮箱" />
-        <button class="btn btn-primary" type="button" @click="login">发送登录链接</button>
+        <input v-model="email" class="field slim" type="email" placeholder="邮箱" autocomplete="email" />
+        <button class="btn btn-primary" type="button" :disabled="loginBusy" @click="login">
+          {{ loginBusy && !sent ? '发送中' : '发送验证码' }}
+        </button>
+        <template v-if="sent">
+          <input
+            v-model="otp"
+            class="field slim"
+            type="text"
+            inputmode="numeric"
+            maxlength="8"
+            placeholder="邮件里的 6 位数字"
+            @keyup.enter="confirmCode"
+          />
+          <button class="btn btn-primary" type="button" :disabled="loginBusy" @click="confirmCode">
+            {{ loginBusy ? '登录中' : '确认登录' }}
+          </button>
+          <p class="hint">
+            回到这个页面填验证码。用微信点邮件链接通常会失败，因为换了一个浏览器。
+          </p>
+        </template>
       </template>
       <template v-else>
         <p class="mail">{{ cloud.email }}</p>

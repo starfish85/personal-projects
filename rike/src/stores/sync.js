@@ -247,6 +247,43 @@ export async function fullSync() {
   }
 }
 
+function clearAuthParams() {
+  const url = `${location.pathname}${location.hash}`
+  history.replaceState({}, '', url)
+}
+
+async function finishAuthCallback(client) {
+  const search = new URLSearchParams(location.search)
+  const hash = new URLSearchParams(String(location.hash || '').replace(/^#\/?/, '').replace(/^#/, ''))
+  const errorDesc = search.get('error_description') || hash.get('error_description')
+  if (errorDesc) {
+    toast(decodeURIComponent(errorDesc.replace(/\+/g, ' ')))
+    clearAuthParams()
+    return
+  }
+  const code = search.get('code')
+  const tokenHash = search.get('token_hash') || hash.get('token_hash')
+  const type = search.get('type') || hash.get('type') || 'email'
+  if (code) {
+    toast('正在登录')
+    const { error } = await client.auth.exchangeCodeForSession(window.location.href)
+    clearAuthParams()
+    if (error) {
+      toast('点链接登录失败。请回到原来的日课页面，填邮件里的 6 位数字。')
+      return
+    }
+    toast('已登录')
+    return
+  }
+  if (tokenHash) {
+    toast('正在登录')
+    const { error } = await client.auth.verifyOtp({ token_hash: tokenHash, type })
+    clearAuthParams()
+    if (error) toast(error.message || '登录失败')
+    else toast('已登录')
+  }
+}
+
 function scheduleSync() {
   if (pulling || !cloud.user) return
   window.clearTimeout(timer)
@@ -265,15 +302,51 @@ export async function sendLogin(email) {
     toast('先填写邮箱')
     return false
   }
+  cloud.email = email.trim()
   const { error } = await client.auth.signInWithOtp({
     email: email.trim(),
-    options: { emailRedirectTo: redirectTo() },
+    options: { emailRedirectTo: redirectTo(), shouldCreateUser: true },
   })
   if (error) {
     toast(error.message || '发送失败')
     return false
   }
-  toast('去邮箱点登录链接')
+  toast('邮件已发出。请把 6 位数字填回这个页面，不要换 App 点链接。')
+  return true
+}
+
+export async function verifyLoginCode(email, token) {
+  const client = getClient()
+  if (!client) {
+    toast('先填写云项目')
+    return false
+  }
+  const address = String(email || '').trim()
+  const code = String(token || '').trim()
+  if (!address) {
+    toast('先填写邮箱')
+    return false
+  }
+  if (!code) {
+    toast('填邮件里的验证码')
+    return false
+  }
+  const { error } = await client.auth.verifyOtp({
+    email: address,
+    token: code,
+    type: 'email',
+  })
+  if (error) {
+    toast(error.message || '验证码不对')
+    return false
+  }
+  const {
+    data: { session },
+  } = await client.auth.getSession()
+  cloud.user = session?.user || null
+  cloud.email = session?.user?.email || address
+  toast('已登录')
+  if (session) await fullSync()
   return true
 }
 
@@ -291,11 +364,7 @@ export async function bootSync() {
   const client = getClient()
   if (!client) return
 
-  if (location.search.includes('code=')) {
-    const { error } = await client.auth.exchangeCodeForSession(location.search)
-    if (error) toast(error.message || '登录失败')
-    history.replaceState({}, '', location.pathname + location.hash)
-  }
+  await finishAuthCallback(client)
 
   const {
     data: { session },
