@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>日课 · 四种高级方向</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/lxgwwenkaiscreen.css" />
+  <style>
+    :root {
+      --page: #f4efe6;
+      --ink: #1c1610;
+      --mute: #6f6456;
+      --line: #ddd4c6;
+      --card: #fffdf8;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+    }
+    body { padding: 40px 28px 80px; }
+    .wrap { max-width: 1440px; margin: 0 auto; }
+    .kicker {
+      margin: 0 0 8px;
+      letter-spacing: 0.28em;
+      font-size: 12px;
+      color: var(--mute);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-family: "LXGW WenKai Screen", serif;
+      font-size: 42px;
+      font-weight: 500;
+    }
+    .lead {
+      max-width: 720px;
+      margin: 0 0 36px;
+      color: var(--mute);
+      line-height: 1.7;
+      font-size: 15px;
+    }
+    .now {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 28px;
+      align-items: start;
+      padding: 22px;
+      margin-bottom: 48px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+    .now ul { margin: 8px 0 0; padding-left: 18px; color: var(--mute); line-height: 1.7; }
+    .now h2 { margin: 0 0 8px; font-size: 18px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 22px;
+    }
+    @media (max-width: 1280px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 760px) {
+      .grid, .now { grid-template-columns: 1fr; }
+      h1 { font-size: 32px; }
+    }
+    .scheme {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .scheme.on { outline: 2px solid #c78a28; }
+    .mood {
+      height: 168px;
+      background: #111 center/cover no-repeat;
+    }
+    .copy { padding: 18px 18px 8px; }
+    .copy .tag {
+      display: inline-block;
+      margin-bottom: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #efe6d6;
+      color: #7a5a20;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+    }
+    .copy h3 {
+      margin: 0 0 6px;
+      font-family: "LXGW WenKai Screen", serif;
+      font-size: 24px;
+      font-weight: 500;
+    }
+    .copy p { margin: 0 0 10px; color: var(--mute); font-size: 13px; line-height: 1.65; }
+    .meta {
+      display: grid;
+      gap: 6px;
+      margin: 0 0 12px;
+      font-size: 12px;
+      color: var(--mute);
+    }
+    .meta b { color: var(--ink); font-weight: 600; }
+    .stage {
+      padding: 8px 18px 22px;
+      display: flex;
+      justify-content: center;
+    }
+    .phone {
+      width: 280px;
+      height: 560px;
+      border-radius: 28px;
+      padding: 10px;
+      background: #1a1612;
+      box-shadow: 0 18px 40px rgba(40, 24, 8, 0.18);
+    }
+    .screen {
+      height: 100%;
+      border-radius: 20px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+    .status {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      padding: 8px 14px 0;
+      opacity: 0.7;
+    }
+    .content { flex: 1; overflow: hidden; padding: 8px 14px 0; }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      font-size: 10px;
+      text-align: center;
+      padding: 8px 0 10px;
+    }
+    .tabs b { display: block; font-size: 13px; font-weight: 400; margin-bottom: 2px; }
+    .fab {
+      position: absolute;
+      right: 14px;
+      bottom: 58px;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 22px;
+      font-weight: 400;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 10px;
+      border-radius: 14px;
+      margin-bottom: 8px;
+    }
+    .row .t { flex: 1; min-width: 0; }
+    .row strong { display: block; font-size: 13px; font-weight: 600; }
+    .row span { display: block; margin-top: 2px; font-size: 10px; opacity: 0.7; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+    .tick {
+      width: 22px; height: 22px; border-radius: 50%;
+      border: 1.5px solid currentColor; flex: 0 0 auto;
+      display: grid; place-items: center; font-size: 11px;
+    }
+
+    /* current */
+    .now-phone { background: #161310; color: #f6efe3; font-family: "LXGW WenKai Screen", serif; }
+    .now-phone .brand { letter-spacing: 0.42em; font-size: 16px; margin: 8px 0 2px; }
+    .now-phone .date { font-size: 11px; color: #9a8b78; text-align: right; }
+    .now-phone .row { background: #221c16; }
+    .now-phone .tabs { border-top: 1px solid #3a3128; background: #221c16; color: #9a8b78; }
+    .now-phone .tabs .on { color: #e2a23a; }
+    .now-phone .fab { background: #e2a23a; color: #1c1410; }
+
+    /* A studio */
+    .a { background: #14110e; color: #f4ead6; font-family: "LXGW WenKai Screen", serif; }
+    .a::before {
+      content: "";
+      position: absolute; inset: 0;
+      background: radial-gradient(120% 70% at 20% 0%, rgba(226,162,58,.16), transparent 55%);
+      pointer-events: none;
+    }
+    .a .head { display: flex; justify-content: space-between; align-items: baseline; }
+    .a .brand { font-size: 20px; letter-spacing: 0.28em; }
+    .a .seal {
+      width: 16px; height: 16px; border: 1px solid #c45c3a; color: #c45c3a;
+      font-size: 9px; display: grid; place-items: center; transform: rotate(-8deg);
+    }
+    .a .sub { margin: 2px 0 10px; font-size: 11px; color: #b7a48a; }
+    .a .hero {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px; margin-bottom: 12px;
+      border: 1px solid rgba(226,162,58,.28);
+      background: linear-gradient(180deg, #2a2218, #1c1712);
+      border-radius: 16px;
+    }
+    .a .hero em { font-style: normal; font-size: 11px; color: #c9b496; }
+    .a .hero strong { font-size: 22px; font-weight: 500; }
+    .a .ring {
+      width: 42px; height: 42px; border-radius: 50%;
+      background: conic-gradient(#e2a23a 0 240deg, #3a3128 0);
+      display: grid; place-items: center;
+    }
+    .a .ring i { width: 28px; height: 28px; border-radius: 50%; background: #1c1712; }
+    .a .row { background: #221c16; box-shadow: inset 3px 0 0 #e2a23a; }
+    .a .row.done { opacity: 0.7; box-shadow: inset 3px 0 0 #8fbf88; }
+    .a .stamp { color: #c45c3a; border-color: #c45c3a; font-size: 9px; width: 26px; height: 26px; transform: rotate(-12deg); }
+    .a .tabs { margin: 6px 10px 10px; border-radius: 16px; background: rgba(34,28,22,.92); color: #9a8b78; }
+    .a .tabs .on { color: #e2a23a; }
+    .a .fab { background: #e2a23a; color: #1c1410; box-shadow: 0 8px 20px rgba(0,0,0,.35); }
+
+    /* B paper */
+    .b { background: #f6efe2; color: #1a1510; font-family: "LXGW WenKai Screen", serif; }
+    .b .head { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    .b .brand { font-size: 22px; }
+    .b .chop { width: 22px; height: 22px; background: #c43b2c; color: #f6efe2; font-size: 11px; display: grid; place-items: center; transform: rotate(-9deg); }
+    .b .sub { font-size: 11px; color: #7a6a58; margin: 2px 0 12px; }
+    .b .row {
+      background: #fffaf0;
+      box-shadow: 0 1px 0 #e7dcc8, 0 8px 16px rgba(90,60,20,.05);
+      border: 1px solid #eadfcb;
+    }
+    .b .row.done { background: #f3ebe0; }
+    .b .tick { border-color: #b9aa96; }
+    .b .tick.on { background: #c43b2c; border-color: #c43b2c; color: #fff; }
+    .b .tabs { color: #8a7a68; border-top: 1px dashed #d8cbb6; }
+    .b .tabs .on { color: #c43b2c; }
+    .b .fab { background: #1a1510; color: #f6efe2; }
+
+    /* C precision */
+    .c { background: #0e0e0c; color: #f3f1ea; font-family: "PingFang SC", sans-serif; }
+    .c .top { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+    .c .brand { font-family: "LXGW WenKai Screen", serif; letter-spacing: 0.34em; font-size: 13px; color: #d8c39a; }
+    .c .plus { width: 26px; height: 26px; border: 1px solid #2a2a26; border-radius: 8px; display: grid; place-items: center; }
+    .c .hero-num { font-size: 54px; font-weight: 520; letter-spacing: -0.04em; line-height: 1; margin: 14px 0 2px; }
+    .c .hero-cap { font-size: 11px; color: #8c887c; margin-bottom: 16px; }
+    .c .row {
+      background: transparent;
+      border-radius: 0;
+      padding: 12px 0;
+      margin: 0;
+      border-bottom: 1px solid #242420;
+    }
+    .c .ring {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: conic-gradient(#d8c39a 0 216deg, #2a2a26 0);
+      display: grid; place-items: center;
+    }
+    .c .ring i { width: 18px; height: 18px; border-radius: 50%; background: #0e0e0c; }
+    .c .tabs { color: #6f6c64; border-top: 1px solid #242420; }
+    .c .tabs .on { color: #d8c39a; }
+
+    /* D editorial */
+    .d { background: #171410; color: #efe6d4; font-family: "LXGW WenKai Screen", serif; }
+    .d .brand { font-size: 11px; letter-spacing: 0.4em; color: #c9b496; margin-top: 4px; }
+    .d .giant { font-size: 72px; line-height: 0.86; margin: 8px 0 0; font-weight: 500; }
+    .d .cap { font-size: 12px; color: #b7a48a; margin: 8px 0 16px; }
+    .d .feature {
+      padding: 14px;
+      border-radius: 4px 18px 18px 18px;
+      background: #efe6d4;
+      color: #1c1410;
+      margin-bottom: 14px;
+    }
+    .d .feature em { font-style: normal; font-size: 11px; color: #7a5a20; }
+    .d .feature strong { display: block; font-size: 18px; margin: 4px 0; }
+    .d .feature .go {
+      margin-top: 8px; height: 32px; border-radius: 10px;
+      background: #1c1410; color: #efe6d4; display: grid; place-items: center; font-size: 12px;
+    }
+    .d .index { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #2c261e; font-size: 13px; }
+    .d .index span { color: #9a8b78; font-size: 11px; }
+    .d .tabs { color: #8a7c68; }
+    .d .tabs .on { color: #efe6d4; }
+
+    .pick {
+      margin-top: 48px;
+      padding: 22px;
+      border: 1px dashed var(--line);
+      border-radius: 16px;
+      color: var(--mute);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="kicker">RIKE · UI DIRECTION</p>
+    <h1>日课要高级，其实是选气质</h1>
+    <p class="lead">
+      现在的界面已经有了方向：暖棕底、文楷、琥珀按钮。它不像烂大街的蓝紫待办，但还停在「自己做的小工具」——图标是 CSS 画的，卡片重量一样，日期还是 <code>2026-08-26</code>，完成只是把整张卡变淡。
+      高级不是多加玻璃拟态，而是让「每天坐下练」这件事看起来被认真对待。下面四套都保留现有信息架构（主页 / 日记 / 日历 / 作品墙），只换气质。
+    </p>
+
+    <section class="now">
+      <div class="phone" style="width:200px;height:400px;padding:8px">
+        <div class="screen now-phone">
+          <div class="status"><span>9:41</span><span>日课</span></div>
+          <div class="content">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <div class="brand">日课</div>
+              <div class="date">2026-08-26</div>
+            </div>
+            <div style="height:16px"></div>
+            <div class="row"><i class="dot" style="background:#e2a23a"></i><div class="t"><strong>练习吉他</strong><span>6 / 10 · 21:00</span></div><div class="tick">+</div></div>
+            <div class="row"><i class="dot" style="background:#7da9c7"></i><div class="t"><strong>晨间拉伸</strong><span>今日未完成</span></div><div class="tick"></div></div>
+            <div class="row" style="opacity:.55"><i class="dot" style="background:#8fbf88"></i><div class="t"><strong>乐理笔记</strong><span>已完成</span></div><div class="tick" style="background:#8fbf88;border:0">✓</div></div>
+          </div>
+          <div class="fab">+</div>
+          <div class="tabs"><span class="on"><b>□</b>主页</span><span><b>≡</b>日记</span><span><b>田</b>日历</span><span><b>▣</b>作品墙</span></div>
+        </div>
+      </div>
+      <div>
+        <h2>现在为什么不够高级</h2>
+        <ul>
+          <li>视觉层级平：所有任务一张卡，今天最该练的那项没有主角。</li>
+          <li>材料假：平面色块 + CSS 图标，没有纸、铜、墨这些「物件感」。</li>
+          <li>时间像数据库：ISO 日期、均匀字距标题，不像日课簿。</li>
+          <li>完成态廉价：整卡变淡，而不是盖印、画圈、收进档案。</li>
+          <li>品牌只用字距：文楷是好资产，但还没变成一套完整的仪式。</li>
+        </ul>
+      </div>
+    </section>
+
+    <div class="grid">
+      <article class="scheme">
+        <div class="mood" style="background-image:url('./ui-mood/a-studio.jpg')"></div>
+        <div class="copy">
+          <span class="tag">推荐默认 · 改动最小</span>
+          <h3>A. 灯下琴房</h3>
+          <p>把现有暖棕继续做精：台灯光、黄铜、谱纸。高级来自「今晚要练」的气氛，不是换一套皮肤。</p>
+          <div class="meta">
+            <div><b>气质</b> 夜间琴房、仪式、私密</div>
+            <div><b>保留</b> 深色、文楷、琥珀、现有结构</div>
+            <div><b>新东西</b> 中文日期、今日进度环、色条卡片、浮动 Tab、完成盖印</div>
+            <div><b>风险</b> 最低。看起来仍是日课，只是更值钱。</div>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="phone">
+            <div class="screen a">
+              <div class="status"><span>9:41</span><span>●●●</span></div>
+              <div class="content">
+                <div class="head"><div class="brand">日课</div><div class="seal">课</div></div>
+                <div class="sub">八月廿六 · 周三　连续 12 日</div>
+                <div class="hero">
+                  <div><em>今日还剩</em><br /><strong>2 课</strong></div>
+                  <div class="ring"><i></i></div>
+                </div>
+                <div class="row"><div class="t"><strong>练习吉他</strong><span>6 / 10 · 21:00</span></div><div class="ring" style="width:28px;height:28px"><i style="width:18px;height:18px"></i></div></div>
+                <div class="row" style="box-shadow:inset 3px 0 0 #7da9c7"><div class="t"><strong>晨间拉伸</strong><span>生活习惯</span></div><div class="tick"></div></div>
+                <div class="row done"><div class="t"><strong>乐理笔记</strong><span>已完成</span></div><div class="tick stamp">印</div></div>
+              </div>
+              <div class="fab">+</div>
+              <div class="tabs"><span class="on"><b>○</b>主页</span><span><b>○</b>日记</span><span><b>○</b>日历</span><span><b>○</b>作品</span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="scheme">
+        <div class="mood" style="background-image:url('./ui-mood/b-paper.jpg')"></div>
+        <div class="copy">
+          <span class="tag">最像「日课簿」</span>
+          <h3>B. 宣纸日课</h3>
+          <p>翻成浅色：宣纸、墨、朱印。曲谱本身就是纸，练的时候屏幕不再是黑洞。无印良品那种克制。</p>
+          <div class="meta">
+            <div><b>气质</b> 手帐、文房、白天书桌</div>
+            <div><b>保留</b> 文楷、任务列表、底部四栏</div>
+            <div><b>新东西</b> 浅色纸底、朱砂完成、虚线装订感、印章品牌</div>
+            <div><b>风险</b> 和现在反差最大；晚上练琴可能偏亮，要单独做曲谱全黑。</div>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="phone">
+            <div class="screen b">
+              <div class="status"><span>9:41</span><span>●●●</span></div>
+              <div class="content">
+                <div class="head"><div class="brand">日课</div><div class="chop">印</div></div>
+                <div class="sub">八月廿六　星期三　还剩两课</div>
+                <div class="row"><i class="dot" style="background:#c43b2c"></i><div class="t"><strong>练习吉他</strong><span>六 / 十遍　晚九时</span></div><div class="tick"></div></div>
+                <div class="row"><i class="dot" style="background:#5d7f93"></i><div class="t"><strong>晨间拉伸</strong><span>未完成</span></div><div class="tick"></div></div>
+                <div class="row done"><i class="dot" style="background:#6d8a68"></i><div class="t"><strong>乐理笔记</strong><span>今日已课</span></div><div class="tick on">✓</div></div>
+              </div>
+              <div class="fab">+</div>
+              <div class="tabs"><span class="on"><b>一</b>主页</span><span><b>二</b>日记</span><span><b>三</b>日历</span><span><b>四</b>作品</span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="scheme">
+        <div class="mood" style="background-image:url('./ui-mood/c-precision.jpg')"></div>
+        <div class="copy">
+          <span class="tag">最像商业产品</span>
+          <h3>C. 静奢工具</h3>
+          <p>炭黑、一根铜线、巨大数字。高级来自留白和精度，像 Linear / 苹果健身那种「什么都没画，但很贵」。</p>
+          <div class="meta">
+            <div><b>气质</b> 精密仪器、克制、现代</div>
+            <div><b>保留</b> 深色、任务数据、四栏</div>
+            <div><b>新东西</b> 超大剩余数、发丝分割、细进度环、文楷只留在词标</div>
+            <div><b>风险</b> 最容易做成又一个待办 App，日课的「课」味会变淡。</div>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="phone">
+            <div class="screen c">
+              <div class="status"><span>9:41</span><span>●●●</span></div>
+              <div class="content">
+                <div class="top"><div class="brand">日课</div><div class="plus">+</div></div>
+                <div class="hero-num">2</div>
+                <div class="hero-cap">今日未完 · 连续 12 日</div>
+                <div class="row"><div class="t"><strong>练习吉他</strong><span>6 / 10</span></div><div class="ring"><i></i></div></div>
+                <div class="row"><div class="t"><strong>晨间拉伸</strong><span>打卡</span></div><div class="tick" style="border-color:#2a2a26"></div></div>
+                <div class="row" style="opacity:.4"><div class="t"><strong>乐理笔记</strong><span>完成</span></div><div class="tick" style="background:#d8c39a;border:0;color:#0e0e0c">✓</div></div>
+              </div>
+              <div class="tabs"><span class="on"><b>—</b>主页</span><span><b>—</b>日记</span><span><b>—</b>日历</span><span><b>—</b>作品</span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="scheme">
+        <div class="mood" style="background-image:url('./ui-mood/d-editorial.jpg')"></div>
+        <div class="copy">
+          <span class="tag">最有设计感</span>
+          <h3>D. 杂志封面</h3>
+          <p>每天打开像翻到新一页封面：巨大日期，一件主课铺满，其余收成目录。适合「今天只认真练一件」。</p>
+          <div class="meta">
+            <div><b>气质</b> 独立杂志、封面、主次分明</div>
+            <div><b>保留</b> 深色、文楷、任务模型</div>
+            <div><b>新东西</b> 巨型日期、主课大卡、其余变索引行</div>
+            <div><b>风险</b> 任务一多会挤；置顶/多课并行时要规定谁当封面。</div>
+          </div>
+        </div>
+        <div class="stage">
+          <div class="phone">
+            <div class="screen d">
+              <div class="status"><span>9:41</span><span>●●●</span></div>
+              <div class="content">
+                <div class="brand">日课 · 八月</div>
+                <div class="giant">廿六</div>
+                <div class="cap">星期三 · 还剩两课</div>
+                <div class="feature">
+                  <em>今日主课</em>
+                  <strong>练习吉他</strong>
+                  <div style="font-size:22px;letter-spacing:.04em">6 / 10</div>
+                  <div class="go">打开曲谱</div>
+                </div>
+                <div class="index"><b>晨间拉伸</b><span>未完成</span></div>
+                <div class="index"><b>乐理笔记</b><span>已完成</span></div>
+              </div>
+              <div class="tabs"><span class="on"><b>主</b>页</span><span><b>日</b>记</span><span><b>历</b></span><span><b>墙</b></span></div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="pick">
+      选的时候不用想「哪套更好看」，想「你每天打开时希望像走进哪里」：A 是灯还亮着的琴房，B 是摊开的日课簿，C 是一块精密表盘，D 是今天的杂志封面。
+      也可以混：最稳的混法是 <b>A 的颜色 + D 的主次</b>（暖棕琴房，但首页有一个主课封面）。曲谱页四种都会做成沉浸全黑，不挡谱。
+    </div>
+  </div>
+</body>
+</html>

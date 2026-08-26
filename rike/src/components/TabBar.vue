@@ -33,19 +33,32 @@ function goGallery() {
 <template>
   <nav class="tabbar">
     <button type="button" class="tab" :class="{ on: active === 'home' }" @click="goHome">
-      <span class="ico home" />
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4.5 11.2L12 4.8l7.5 6.4V19a1.2 1.2 0 0 1-1.2 1.2H5.7A1.2 1.2 0 0 1 4.5 19z" />
+        <path d="M10 20.2v-6h4v6" />
+      </svg>
       <span>主页</span>
     </button>
     <button type="button" class="tab" :class="{ on: active === 'journal' }" @click="goJournal">
-      <span class="ico note" />
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="5.5" y="4.5" width="13" height="15" rx="1.6" />
+        <path d="M8.5 9h7M8.5 12.5h7M8.5 16h4.5" />
+      </svg>
       <span>日记</span>
     </button>
     <button type="button" class="tab" :class="{ on: active === 'calendar' }" @click="goCalendar">
-      <span class="ico cal" />
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="5.5" width="15" height="14" rx="2" />
+        <path d="M4.5 10h15M8 4.5v2.5M16 4.5v2.5" />
+      </svg>
       <span>日历</span>
     </button>
     <button type="button" class="tab" :class="{ on: active === 'gallery' }" @click="goGallery">
-      <span class="ico pic" />
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="4.5" y="5.5" width="15" height="13" rx="2" />
+        <path d="M4.8 16.2l4.2-4.2 3.2 3.2 2.2-2.2 4.9 3.4" />
+        <circle cx="9" cy="9.2" r="1.2" />
+      </svg>
       <span>作品墙</span>
     </button>
   </nav>
@@ -54,16 +67,23 @@ function goGallery() {
 <style scoped>
 .tabbar {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 12px;
+  right: 12px;
+  bottom: calc(10px + var(--safe-bottom));
   z-index: 30;
-  height: var(--tab-h);
-  padding-bottom: var(--safe-bottom);
+  width: auto;
+  max-width: var(--page-max);
+  height: 58px;
+  margin-inline: auto;
+  padding: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  background: var(--bg-elev);
-  border-top: 1px solid var(--line);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  background: rgba(34, 28, 22, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(16px);
 }
 
 .tab {
@@ -71,117 +91,50 @@ function goGallery() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
+  overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.tab span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tab.on {
   color: var(--amber);
 }
 
-.ico {
-  width: 22px;
-  height: 22px;
-  position: relative;
+.tab svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 @media (min-width: 700px) {
+  .tabbar {
+    left: 50%;
+    right: auto;
+    width: var(--page-max);
+    height: 64px;
+    transform: translateX(-50%);
+  }
+
   .tab {
     font-size: var(--fs-sm);
   }
 
-  .ico {
-    width: 26px;
-    height: 26px;
+  .tab svg {
+    width: 24px;
+    height: 24px;
   }
-}
-
-.home {
-  border: 2px solid currentColor;
-  width: 18px;
-  height: 14px;
-  margin-top: 6px;
-  border-radius: 2px;
-}
-
-.home::before {
-  content: '';
-  position: absolute;
-  left: -5px;
-  top: -8px;
-  width: 0;
-  height: 0;
-  border-left: 12px solid transparent;
-  border-right: 12px solid transparent;
-  border-bottom: 9px solid currentColor;
-}
-
-.note {
-  border: 2px solid currentColor;
-  border-radius: 2px;
-}
-
-.note::before,
-.note::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  height: 2px;
-  background: currentColor;
-  border-radius: 1px;
-}
-
-.note::before {
-  top: 6px;
-}
-
-.note::after {
-  top: 12px;
-}
-
-.cal {
-  border: 2px solid currentColor;
-  border-radius: 3px;
-}
-
-.cal::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 5px;
-  height: 2px;
-  background: currentColor;
-}
-
-.pic {
-  border: 2px solid currentColor;
-  border-radius: 4px;
-}
-
-.pic::before {
-  content: '';
-  position: absolute;
-  left: 4px;
-  right: 4px;
-  bottom: 4px;
-  height: 6px;
-  border-left: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: skew(-18deg);
-}
-
-.pic::after {
-  content: '';
-  position: absolute;
-  right: 4px;
-  top: 4px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: currentColor;
 }
 </style>

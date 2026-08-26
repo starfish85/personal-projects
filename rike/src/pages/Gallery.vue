@@ -166,6 +166,7 @@ function openTaskWall(id) {
 .page {
   height: 100%;
   overflow: auto;
+  overflow-x: hidden;
   padding: calc(12px + var(--safe-top)) 16px calc(var(--tab-h) + 16px);
   max-width: var(--page-max);
   margin: 0 auto;

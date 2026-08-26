@@ -1,13 +1,15 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import PracticeCounter from '../components/PracticeCounter.vue'
 import TaskHelpers from '../components/TaskHelpers.vue'
 import { practice, setTarget } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 import { backupFileName, exportAndDownload, importBackup } from '../utils/backup'
+import { formatCoverDate } from '../utils/date'
 
 const router = useRouter()
+const cover = computed(() => formatCoverDate(practice.date))
 const showTarget = ref(false)
 const draft = ref('10')
 const importRef = ref(null)
@@ -59,7 +61,7 @@ async function onImport(event) {
     <header class="head">
       <button type="button" class="back" @click="router.push('/')">返回</button>
       <p class="brand">{{ practice.task.title }}</p>
-      <p class="date">{{ practice.date }}</p>
+      <p class="date">{{ cover.month }}{{ cover.day }}</p>
     </header>
 
     <PracticeCounter variant="hero" @edit-target="openTarget" />

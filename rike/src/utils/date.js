@@ -18,11 +18,37 @@ export function monthGrid(year, month) {
   return cells
 }
 
+const CN_MONTH = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二']
+const CN_WEEK = ['日', '一', '二', '三', '四', '五', '六']
+const CN_DIGIT = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']
+
+export function chineseDay(n) {
+  const day = Number(n)
+  if (day <= 10) return day === 10 ? '十' : CN_DIGIT[day]
+  if (day < 20) return `十${CN_DIGIT[day - 10]}`
+  if (day === 20) return '二十'
+  if (day < 30) return `廿${CN_DIGIT[day - 20]}`
+  if (day === 30) return '三十'
+  return '卅一'
+}
+
+export function formatCoverDate(dateKey = localDateKey()) {
+  const [y, m, d] = String(dateKey || localDateKey()).split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  const week = CN_WEEK[date.getDay()]
+  return {
+    year: y,
+    month: `${CN_MONTH[m]}月`,
+    day: chineseDay(d),
+    weekday: `星期${week}`,
+    weekdayShort: `周${week}`,
+  }
+}
+
 export function formatDayTitle(dateKey) {
   const [y, m, d] = dateKey.split('-').map(Number)
   const date = new Date(y, m - 1, d)
-  const weeks = ['日', '一', '二', '三', '四', '五', '六']
-  return `${y}年${m}月${d}日 周${weeks[date.getDay()]}`
+  return `${y}年${m}月${d}日 周${CN_WEEK[date.getDay()]}`
 }
 
 export function weekdayOf(dateKey) {

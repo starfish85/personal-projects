@@ -1,5 +1,5 @@
 <script setup>
-import { onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   COMPLETION_MODES,
@@ -33,7 +33,7 @@ import {
   dismissBackupNag,
   exportAndDownload,
 } from '../utils/backup'
-import { localDateKey, weekdayOf } from '../utils/date'
+import { formatCoverDate, localDateKey, weekdayOf } from '../utils/date'
 import { ensureNotifyPermission } from '../utils/remind'
 
 defineOptions({ name: 'Home' })
@@ -50,7 +50,6 @@ const expandedId = ref(null)
 const saving = ref(false)
 const fromCalendarDate = ref('')
 const backupNag = ref(false)
-const menuTask = ref(null)
 const pageRef = ref(null)
 const WEEKDAYS = [
   { value: 1, label: '一' },
@@ -86,12 +85,6 @@ const drag = reactive({
   tracking: false,
 })
 let skipClick = false
-let longPressTimer = 0
-
-function clearLongPress() {
-  window.clearTimeout(longPressTimer)
-  longPressTimer = 0
-}
 
 function helperIds(list) {
   return [...(list || [])]
@@ -294,7 +287,6 @@ onActivated(() => {
   ensureToday()
   refreshBackupNag()
 })
-onBeforeUnmount(clearLongPress)
 watch(() => [route.query.add, route.query.edit], openAddFromRoute)
 watch(() => [practice.ready, practice.lastBackupAt], refreshBackupNag)
 
@@ -386,6 +378,64 @@ function visibleTasks() {
   })
 }
 
+const cover = computed(() => formatCoverDate(practice.date))
+
+function remainingCount() {
+  return visibleTasks().filter((task) => !isDone(task)).length
+}
+
+function remainingCopy() {
+  const total = visibleTasks().length
+  const left = remainingCount()
+  if (!total) return '今天没有安排'
+  if (left === 0) return '今日已课'
+  return `还剩 ${left} 课`
+}
+
+function featuredTask() {
+  const list = visibleTasks()
+  if (!list.length) return null
+  const open = list.filter((task) => !isDone(task))
+  const pool = open.length ? open : list
+  return pool.find((task) => task.pinned) || pool[0]
+}
+
+const featured = computed(() => featuredTask())
+
+function restTasks() {
+  return visibleTasks().filter((task) => task.id !== featured.value?.id)
+}
+
+function counterOf(task) {
+  if (task.completion !== 'counter') return null
+  const rec = practice.todayByTask[task.id]
+  return { count: rec?.count || 0, target: task.target || 10 }
+}
+
+function featureCta(task) {
+  if (!task) return '打开'
+  if (isDone(task)) return '回看今天'
+  if (task.completion === 'counter' && (task.sheet || task.components?.includes('sheet'))) {
+    return '打开曲谱'
+  }
+  if (task.completion === 'counter') return '开始练习'
+  if (task.completion === 'photo-log') return '去打卡'
+  return '打开'
+}
+
+function onFeatureClick(task) {
+  if (consumeSkip()) return
+  if (openId.value === task.id) {
+    closeSwipe()
+    return
+  }
+  if (openId.value) {
+    closeSwipe()
+    return
+  }
+  router.push(`/task/${task.id}`)
+}
+
 function emptyCopy() {
   return practice.tasks.length ? '今天没有安排的日课' : '今天还没有任务'
 }
@@ -414,39 +464,6 @@ function closeSwipe() {
   drag.x = 0
 }
 
-function openMenu(task) {
-  clearLongPress()
-  closeSwipe()
-  menuTask.value = task
-}
-
-function closeMenu() {
-  menuTask.value = null
-}
-
-function onMoreClick(task) {
-  consumeSkip()
-  openMenu(task)
-}
-
-function menuEdit() {
-  const task = menuTask.value
-  closeMenu()
-  if (task) openEdit(task)
-}
-
-async function menuPin() {
-  const task = menuTask.value
-  closeMenu()
-  if (task) await pinFromList(task)
-}
-
-async function menuArchive() {
-  const task = menuTask.value
-  closeMenu()
-  if (task) await deleteFromList(task)
-}
-
 function offsetOf(id) {
   if (drag.tracking && drag.id === id) return drag.x
   return openId.value === id ? -ACTION_W : 0
@@ -458,7 +475,6 @@ function dragging(id) {
 
 function onDown(event, task) {
   if (event.pointerType === 'mouse' && event.button !== 0) return
-  if (event.target.closest('.more, .tick, .expand')) return
   if (openId.value && openId.value !== task.id) openId.value = null
   drag.id = task.id
   drag.startX = event.clientX
@@ -466,17 +482,6 @@ function onDown(event, task) {
   drag.x = openId.value === task.id ? -ACTION_W : 0
   drag.axis = null
   drag.tracking = true
-  clearLongPress()
-  longPressTimer = window.setTimeout(() => {
-    longPressTimer = 0
-    if (!drag.tracking || drag.axis === 'x') return
-    skipClick = true
-    drag.tracking = false
-    drag.id = null
-    drag.axis = null
-    drag.x = openId.value === task.id ? -ACTION_W : 0
-    openMenu(task)
-  }, 480)
 }
 
 function onMove(event) {
@@ -486,11 +491,7 @@ function onMove(event) {
   if (!drag.axis) {
     if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
     drag.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'
-    if (drag.axis === 'x') {
-      clearLongPress()
-      event.currentTarget.setPointerCapture?.(event.pointerId)
-    }
-    if (drag.axis === 'y') clearLongPress()
+    if (drag.axis === 'x') event.currentTarget.setPointerCapture?.(event.pointerId)
   }
   if (drag.axis !== 'x') return
   event.preventDefault()
@@ -499,7 +500,6 @@ function onMove(event) {
 }
 
 function onUp() {
-  clearLongPress()
   if (!drag.tracking) return
   const id = drag.id
   const x = drag.x
@@ -525,10 +525,6 @@ function consumeSkip() {
 
 function onPageClick(event) {
   if (!event.target.closest('.swipe')) closeSwipe()
-}
-
-function onCardContextMenu(event) {
-  event.preventDefault()
 }
 
 function onCardClick(task) {
@@ -584,20 +580,24 @@ async function toggleSub(task, subtask) {
 </script>
 
 <template>
-  <main ref="pageRef" class="page" @click="onPageClick" @scroll="closeSwipe(); closeMenu()">
-    <header class="head">
-      <p class="brand">日课</p>
-      <div class="head-actions">
-        <p class="date">{{ practice.date }}</p>
-        <button
-          v-if="managedTasks().length"
-          type="button"
-          class="archive-btn"
-          @click="archiveOpen = true"
-        >
-          归档箱
-        </button>
+  <main ref="pageRef" class="page" @click="onPageClick" @scroll="closeSwipe">
+    <header class="cover">
+      <div class="cover-top">
+        <p class="brand">日课</p>
+        <div class="head-actions">
+          <button
+            v-if="managedTasks().length"
+            type="button"
+            class="archive-btn"
+            @click="archiveOpen = true"
+          >
+            归档箱
+          </button>
+        </div>
       </div>
+      <p class="cover-kicker">{{ cover.month }}</p>
+      <p class="cover-day">{{ cover.day }}</p>
+      <p class="cover-cap">{{ cover.weekday }} · {{ remainingCopy() }}</p>
     </header>
     <SyncBar />
 
@@ -612,10 +612,50 @@ async function toggleSub(task, subtask) {
     <section class="links">
       <p v-if="!visibleTasks().length" class="empty">{{ emptyCopy() }}</p>
       <div
-        v-for="task in visibleTasks()"
+        v-if="featured"
+        class="swipe feature-swipe"
+        :class="{ done: isDone(featured), expanded: expandedId === featured.id }"
+        :style="{ '--task': featured.color }"
+      >
+        <div class="actions" aria-hidden="true">
+          <button type="button" class="act edit" @click="openEdit(featured)">修改</button>
+          <button type="button" class="act del" @click="deleteFromList(featured)">归档</button>
+          <button type="button" class="act pin" @click="pinFromList(featured)">
+            {{ featured.pinned ? '取消' : '置顶' }}
+          </button>
+        </div>
+        <div
+          class="card feature-card"
+          :class="{ dragging: dragging(featured.id) }"
+          :style="{ transform: `translateX(${offsetOf(featured.id)}px)` }"
+          @pointerdown="onDown($event, featured)"
+          @pointermove="onMove"
+          @pointerup="onUp"
+          @pointercancel="onUp"
+          @click="onFeatureClick(featured)"
+        >
+          <em>{{ isDone(featured) ? '今日主课 · 已完成' : '今日主课' }}</em>
+          <b v-if="isDone(featured)" class="seal">印</b>
+          <strong>
+            {{ featured.title }}
+            <span v-if="featured.pinned" class="pin-mark">置顶</span>
+          </strong>
+          <p v-if="counterOf(featured)" class="feature-count">
+            {{ counterOf(featured).count }} / {{ counterOf(featured).target }}
+          </p>
+          <span class="feature-line">
+            {{ taskTodayLine(featured) }}{{ featured.reminder ? ` · ${featured.reminder}` : '' }}
+          </span>
+          <div class="feature-go">{{ featureCta(featured) }}</div>
+        </div>
+      </div>
+      <p v-if="restTasks().length" class="list-kicker">其余日课</p>
+      <div
+        v-for="task in restTasks()"
         :key="task.id"
         class="swipe"
         :class="{ done: isDone(task), expanded: expandedId === task.id }"
+        :style="{ '--task': task.color }"
       >
         <div class="actions" aria-hidden="true">
           <button type="button" class="act edit" @click="openEdit(task)">修改</button>
@@ -633,7 +673,6 @@ async function toggleSub(task, subtask) {
           @pointerup="onUp"
           @pointercancel="onUp"
           @click="onCardClick(task)"
-          @contextmenu="onCardContextMenu"
         >
           <i class="dot" :style="{ background: task.color }" />
           <div class="body">
@@ -651,14 +690,6 @@ async function toggleSub(task, subtask) {
             @click.stop="expandedId = expandedId === task.id ? null : task.id"
           >
             {{ expandedId === task.id ? '收起' : '展开' }}
-          </button>
-          <button
-            class="more"
-            type="button"
-            aria-label="更多"
-            @click.stop="onMoreClick(task)"
-          >
-            ⋯
           </button>
           <button
             v-if="task.completion === 'check'"
@@ -863,20 +894,6 @@ async function toggleSub(task, subtask) {
       </div>
     </div>
 
-    <div v-if="menuTask" class="modal-mask" @click.self="closeMenu">
-      <div class="modal-sheet menu-sheet">
-        <h2 class="modal-title">{{ menuTask.title }}</h2>
-        <button type="button" class="menu-item" @click="menuEdit">修改</button>
-        <button type="button" class="menu-item" @click="menuPin">
-          {{ menuTask.pinned ? '取消置顶' : '置顶' }}
-        </button>
-        <button type="button" class="menu-item danger" @click="menuArchive">归档</button>
-        <div class="modal-actions">
-          <button class="btn btn-ghost" type="button" @click="closeMenu">取消</button>
-        </div>
-      </div>
-    </div>
-
     <div v-if="archiveOpen" class="modal-mask" @click.self="archiveOpen = false">
       <div class="modal-sheet">
         <h2 class="modal-title">归档箱</h2>
@@ -905,29 +922,50 @@ async function toggleSub(task, subtask) {
 .page {
   height: 100%;
   overflow: auto;
+  overflow-x: hidden;
   padding: calc(18px + var(--safe-top)) 22px calc(var(--tab-h) + 88px);
   max-width: var(--page-max);
   margin: 0 auto;
 }
 
-.head {
+.cover-top {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 16px;
 }
 
 .brand {
-  margin: 0;
-  font-size: var(--fs-xl);
-  letter-spacing: 0.42em;
+  margin: 4px 0 0;
+  font-size: 15px;
+  letter-spacing: 0.36em;
   font-weight: 650;
+  color: var(--paper);
 }
 
-.date {
-  margin: 0;
+.cover-kicker {
+  margin: 22px 0 0;
   color: var(--muted);
   font-size: var(--fs-sm);
+  letter-spacing: 0.22em;
+}
+
+.cover-day {
+  margin: 2px 0 0;
+  font-size: 76px;
+  line-height: 0.88;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+.cover-cap {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.feature-card {
+  position: relative;
 }
 
 .head-actions {
@@ -946,7 +984,14 @@ async function toggleSub(task, subtask) {
 .links {
   display: grid;
   gap: 12px;
-  margin-top: 28px;
+  margin-top: 26px;
+}
+
+.list-kicker {
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.16em;
 }
 
 .empty {
@@ -971,6 +1016,10 @@ async function toggleSub(task, subtask) {
 
 .swipe.done {
   opacity: 0.58;
+}
+
+.feature-swipe.done {
+  opacity: 1;
 }
 
 .swipe.done .card strong,
@@ -1015,10 +1064,95 @@ async function toggleSub(task, subtask) {
   text-align: left;
   padding: var(--card-pad);
   background: var(--bg-elev);
+  box-shadow: inset 3px 0 0 var(--task, var(--amber));
   touch-action: pan-y;
   transition: transform 0.22s ease;
   user-select: none;
-  -webkit-touch-callout: none;
+}
+
+.feature-card {
+  display: block;
+  padding: 18px 18px 16px;
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 6px 22px 22px 22px;
+  box-shadow: none;
+}
+
+.feature-card em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: #7a5a20;
+}
+
+.feature-card strong {
+  display: block;
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: 22px;
+}
+
+.feature-count {
+  margin: 8px 0 0;
+  font-size: 36px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.feature-card .feature-line {
+  display: block;
+  margin-top: 6px;
+  color: #7a6a58;
+  font-size: var(--fs-sm);
+}
+
+.feature-card .pin-mark {
+  display: inline;
+  color: #a56b14;
+}
+
+.feature-go {
+  margin-top: 16px;
+  min-height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: var(--fs-md);
+  font-weight: 650;
+}
+
+.feature-swipe.done .feature-card {
+  background: #e8dcc4;
+}
+
+.feature-card .seal {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid var(--seal);
+  color: var(--seal);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 650;
+  transform: rotate(-12deg);
+}
+
+@media (min-width: 700px) {
+  .cover-day {
+    font-size: 96px;
+  }
+
+  .feature-count {
+    font-size: 44px;
+  }
 }
 
 .swipe.expanded .card {
@@ -1092,35 +1226,6 @@ async function toggleSub(task, subtask) {
   color: var(--amber);
   font-size: 12px;
   font-weight: 650;
-}
-
-.more {
-  min-width: 44px;
-  min-height: 44px;
-  flex: 0 0 auto;
-  margin-right: -6px;
-  color: var(--muted);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  line-height: 1;
-}
-
-.menu-sheet .menu-item {
-  width: 100%;
-  min-height: var(--tap);
-  padding: 0 4px;
-  text-align: left;
-  font-size: var(--fs-lg);
-  font-weight: 650;
-}
-
-.menu-sheet .menu-item.danger {
-  color: var(--danger);
-}
-
-.menu-sheet .modal-actions {
-  margin-top: 12px;
 }
 
 .subtasks {

@@ -13,6 +13,9 @@ import {
 } from '../stores/practice'
 import { confirmDialog, toast } from '../stores/ui'
 import { backupFileName, exportAndDownload, importBackup } from '../utils/backup'
+import { formatCoverDate } from '../utils/date'
+
+const cover = computed(() => formatCoverDate(practice.date))
 
 const router = useRouter()
 const showTarget = ref(false)
@@ -67,7 +70,7 @@ async function onImport(event) {
     <header class="head">
       <button type="button" class="back" @click="router.push('/')">返回</button>
       <p class="brand">{{ practice.task.title }}</p>
-      <p class="date">{{ practice.date }}</p>
+      <p class="date">{{ cover.month }}{{ cover.day }}</p>
     </header>
 
     <PracticeCounter

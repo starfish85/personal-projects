@@ -55,6 +55,7 @@ onMounted(() => {
 <style scoped>
 .app {
   height: 100%;
+  background: radial-gradient(90% 48% at 14% -10%, rgba(226, 162, 58, 0.14), transparent 56%);
 }
 
 .boot {

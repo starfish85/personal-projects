@@ -274,7 +274,7 @@ watch(
 <template>
   <main class="page">
     <header class="head">
-      <span />
+      <p class="brand">日课</p>
       <h1>日历</h1>
       <span />
     </header>
@@ -462,6 +462,7 @@ watch(
 .page {
   height: 100%;
   overflow: auto;
+  overflow-x: hidden;
   padding: calc(12px + var(--safe-top)) 16px calc(var(--tab-h) + 16px);
   max-width: var(--page-max);
   margin: 0 auto;
@@ -469,8 +470,15 @@ watch(
 
 .head {
   display: grid;
-  grid-template-columns: 64px 1fr 64px;
+  grid-template-columns: minmax(0, 72px) 1fr minmax(0, 72px);
   align-items: center;
+}
+
+.head .brand {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.28em;
 }
 
 .head h1 {
@@ -508,7 +516,7 @@ watch(
 .week,
 .grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .week span {
@@ -536,7 +544,7 @@ watch(
 }
 
 .cell.on {
-  background: var(--bg-soft);
+  background: rgba(226, 162, 58, 0.16);
 }
 
 .bar {

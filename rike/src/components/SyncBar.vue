@@ -145,7 +145,9 @@ async function onImport(event) {
 }
 
 .summary strong {
-  font-size: var(--fs-sm);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  font-weight: 500;
 }
 
 .summary em {
