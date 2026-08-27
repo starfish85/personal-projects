@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>片语</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #F4EFE6;
+      --paper: #FFFBF4;
+      --ink: #1C1917;
+      --muted: #78716C;
+      --line: #E8E0D4;
+      --accent: #C45C26;
+      --accent-text: #FFFBF4;
+      --danger: #B42318;
+      --tag: #F0E7DB;
+      --ok: #3F6F4F;
+      --shadow: 0 12px 40px rgba(28, 25, 23, 0.08);
+      --font-ui: "Noto Sans SC", -apple-system, "PingFang SC", "Hiragino Sans GB", sans-serif;
+      --font-quote: "Noto Serif SC", "Songti SC", "STSong", serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: var(--font-ui);
+      background: var(--bg);
+      color: var(--ink);
+      padding: 16px 16px 48px;
+    }
+    .card-quote, #draft, #edit-text {
+      font-family: var(--font-quote);
+    }
+    .banner {
+      max-width: 860px;
+      margin: 0 auto 16px;
+      background: #F8E3A5;
+      color: #5C4A12;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .banner strong { color: #3F3208; }
+    .font-preview {
+      max-width: 860px;
+      margin: 0 auto 16px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 18px 14px;
+    }
+    .font-preview .kicker {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      font-family: var(--font-ui);
+    }
+    .font-preview .sample {
+      font-family: var(--font-quote);
+      font-size: 22px;
+      line-height: 1.55;
+      margin: 0;
+    }
+    .toolbar {
+      max-width: 860px;
+      margin: 0 auto 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .toolbar label { font-size: 13px; color: var(--muted); }
+    .toolbar select {
+      flex: 1;
+      min-width: 220px;
+      font: inherit;
+      font-size: 14px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--ink);
+    }
+    .layout {
+      max-width: 860px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 390px 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+    @media (max-width: 820px) {
+      .layout { grid-template-columns: 1fr; }
+      .note { order: -1; }
+    }
+    .phone-wrap { display: flex; justify-content: center; }
+    .phone {
+      width: 390px;
+      max-width: 100%;
+      min-height: 760px;
+      background: var(--bg);
+      border-radius: 0;
+      box-shadow: none;
+      border: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .status-bar {
+      display: none;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      min-height: 48px;
+      padding: 4px 12px 8px;
+      border-bottom: 1px solid var(--line);
+      gap: 4px;
+    }
+    .topbar h1 {
+      flex: 1;
+      margin: 0;
+      font-size: 18px;
+      font-weight: 650;
+      text-align: center;
+    }
+    .topbar .back {
+      font: inherit;
+      font-size: 15px;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+      padding: 8px 8px;
+      min-width: 64px;
+      text-align: left;
+    }
+    .topbar .spacer { min-width: 64px; }
+    .fab {
+      display: none;
+      position: absolute;
+      left: 50%;
+      bottom: 22px;
+      transform: translateX(-50%);
+      z-index: 6;
+      background: var(--accent);
+      color: var(--accent-text);
+      border: 0;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 14px 28px;
+      border-radius: 999px;
+      box-shadow: 0 8px 24px rgba(196, 92, 38, 0.38);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .phone.is-home .topbar { display: none; }
+    .phone.is-list .fab { display: block; }
+    .phone.is-list #toast, .phone.is-cover #toast, .phone.is-write #toast { bottom: 84px; }
+    .page { display: none; flex: 1; flex-direction: column; min-height: 0; }
+    .page.on { display: flex; }
+    .home-stack { flex: 1; position: relative; min-height: 0; }
+    .cover, .list-pane, .write-pane {
+      position: absolute;
+      inset: 0;
+      transition: transform .45s cubic-bezier(.22,.75,.2,1), opacity .35s ease;
+    }
+    .cover {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 24px 88px;
+      z-index: 2;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .sun-field {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+      background: radial-gradient(circle farthest-corner at 50% 46%,
+        rgba(255, 250, 236, 0.72) 0%,
+        rgba(252, 220, 150, 0.32) 16%,
+        rgba(240, 176, 88, 0.1) 38%,
+        rgba(244, 239, 230, 0) 72%);
+    }
+    .sun-ray {
+      position: absolute;
+      left: 50%;
+      top: 46%;
+      width: 440%;
+      aspect-ratio: 1;
+      height: auto;
+      border-radius: 50%;
+      background: radial-gradient(circle,
+        rgba(255, 244, 214, 0) 12%,
+        rgba(252, 220, 150, 0.26) 22%,
+        rgba(232, 170, 80, 0.12) 32%,
+        rgba(244, 239, 230, 0) 48%);
+      transform: translate(-50%, -50%) scale(0.1);
+      animation: radiate 5.6s ease-out infinite;
+    }
+    .sun-ray.r2 { animation-delay: 1.4s; }
+    .sun-ray.r3 { animation-delay: 2.8s; }
+    .sun-ray.r4 { animation-delay: 4.2s; }
+    @keyframes radiate {
+      0% { transform: translate(-50%, -50%) scale(0.08); opacity: 0.7; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+    }
+    .sun {
+      position: relative;
+      width: 240px;
+      height: 240px;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      padding: 0;
+      z-index: 2;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sun:focus-visible { outline: none; }
+    .sun:active { transform: scale(0.98); }
+    .cover-match {
+      margin-top: 8px;
+      z-index: 2;
+      font: inherit;
+      font-size: 14px;
+      color: var(--accent);
+      background: transparent;
+      border: 1px solid rgba(196, 92, 38, 0.35);
+      border-radius: 999px;
+      padding: 10px 22px;
+      cursor: pointer;
+    }
+    .write-pane {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 28px 20px 32px;
+      background: radial-gradient(ellipse at 50% 38%, #FFF8EC 0%, var(--bg) 70%);
+      z-index: 3;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .write-glow {
+      border-radius: 20px;
+      padding: 16px;
+      background: var(--paper);
+      box-shadow: 0 0 0 1px rgba(196, 92, 38, 0.12), 0 0 48px rgba(232, 161, 90, 0.28);
+    }
+    .write-glow #draft {
+      min-height: 120px;
+      background: #FFFDF8;
+      font-size: 17px;
+      line-height: 1.55;
+    }
+    .write-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+    }
+    .list-pane {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      transform: translateY(104%);
+      z-index: 4;
+    }
+    .list-handle {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 10px 16px 0;
+      cursor: pointer;
+    }
+    .phone.is-cover .cover { transform: none; opacity: 1; }
+    .phone.is-cover .write-pane, .phone.is-list .write-pane { opacity: 0; pointer-events: none; }
+    .phone.is-write .cover { opacity: 0; pointer-events: none; }
+    .phone.is-write .write-pane { opacity: 1; pointer-events: auto; }
+    .phone.is-list .cover { transform: translateY(-24%); opacity: 0; pointer-events: none; }
+    .phone.is-list .list-pane { transform: translateY(0); }
+    @media (prefers-reduced-motion: reduce) {
+      .sun-ray { animation: none; opacity: 0.25; }
+      .cover, .list-pane, .write-pane { transition: none; }
+    }
+    .composer {
+      padding: 16px 16px 8px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: end;
+    }
+    textarea, input[type="text"] {
+      font: inherit;
+      color: var(--ink);
+      background: #F7F1E8;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      width: 100%;
+      resize: none;
+    }
+    textarea:focus, input:focus, select:focus { outline: 2px solid rgba(196, 92, 38, 0.35); }
+    #draft { min-height: 76px; }
+    .btn {
+      font: inherit;
+      border: 0;
+      cursor: pointer;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 15px;
+    }
+    .btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+    .btn-ghost { background: transparent; color: var(--ink); }
+    .btn-text { background: transparent; color: var(--accent); padding: 0; font-size: 13px; }
+    .btn-danger { background: transparent; color: var(--danger); }
+    .filters {
+      display: flex;
+      gap: 8px;
+      padding: 4px 16px 12px;
+    }
+    .filters select {
+      flex: 1;
+      font: inherit;
+      font-size: 13px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+    }
+    .list {
+      flex: 1;
+      overflow: auto;
+      padding: 0 16px 96px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .phone .list,
+    .phone .match-body,
+    .phone .sheet {
+      scrollbar-width: thin;
+      scrollbar-color: #E4D8C8 transparent;
+    }
+    .phone .list::-webkit-scrollbar,
+    .phone .match-body::-webkit-scrollbar,
+    .phone .sheet::-webkit-scrollbar {
+      width: 3px;
+    }
+    .phone .list::-webkit-scrollbar-track,
+    .phone .match-body::-webkit-scrollbar-track,
+    .phone .sheet::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .phone .list::-webkit-scrollbar-thumb,
+    .phone .match-body::-webkit-scrollbar-thumb,
+    .phone .sheet::-webkit-scrollbar-thumb {
+      background: rgba(180, 150, 118, 0.35);
+      border-radius: 999px;
+    }
+    .phone .list::-webkit-scrollbar-thumb:hover,
+    .phone .match-body::-webkit-scrollbar-thumb:hover,
+    .phone .sheet::-webkit-scrollbar-thumb:hover {
+      background: rgba(180, 150, 118, 0.55);
+    }
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 48px 24px;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+    .card {
+      background: #FFF;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 14px 12px;
+      text-align: left;
+    }
+    .card-quote {
+      font-size: 16px;
+      line-height: 1.55;
+      margin: 0 0 8px;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    .card-quote.clamp {
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .card-foot .tags { flex: 1; }
+    .copy-lib { flex-shrink: 0; padding: 6px 2px; font-size: 13px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      font-size: 12px;
+      background: var(--tag);
+      color: #44403C;
+      border-radius: 999px;
+      padding: 3px 8px;
+    }
+    .tag.wait { color: var(--accent); background: #F8E6D8; }
+    .suggest { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .chip {
+      font: inherit;
+      font-size: 12px;
+      border: 1px dashed var(--accent);
+      color: var(--accent);
+      background: transparent;
+      border-radius: 999px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    .match-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; flex: 1; overflow: auto; }
+    .upload {
+      border: 1.5px dashed #D1C4B2;
+      border-radius: 16px;
+      min-height: 132px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 6px;
+      color: var(--muted);
+      background: #F7F1E8;
+      cursor: pointer;
+      text-align: center;
+      padding: 16px;
+    }
+    .upload strong { color: var(--ink); font-size: 16px; font-weight: 600; }
+    .upload input { display: none; }
+    .thumb-row { display: flex; gap: 12px; align-items: center; }
+    .thumb {
+      width: 72px; height: 72px; border-radius: 12px; object-fit: cover;
+      background: #E8E0D4;
+    }
+    h2.block {
+      font-size: 14px;
+      margin: 8px 0 0;
+      font-weight: 650;
+    }
+    h2.block span { font-weight: 400; color: var(--muted); }
+    .rec {
+      display: flex;
+      gap: 10px;
+      align-items: stretch;
+    }
+    .rec .card { flex: 1; margin: 0; }
+    .copy-btn { align-self: center; white-space: nowrap; }
+    .ref { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+    .banner-in {
+      background: #F8E6D8;
+      color: #7A3410;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      background: #1C1917;
+      color: #FFFBF4;
+      padding: 10px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s;
+    }
+    .toast.show { opacity: 1; }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(28, 25, 23, .35);
+      display: none;
+      align-items: flex-end;
+    }
+    .overlay.show { display: flex; }
+    .sheet {
+      background: var(--paper);
+      width: 100%;
+      border-radius: 20px 20px 0 0;
+      padding: 16px 16px 24px;
+      max-height: 86%;
+      overflow: auto;
+    }
+    .sheet h3 { margin: 4px 0 12px; font-size: 16px; }
+    .counter { font-size: 12px; color: var(--muted); text-align: right; margin: 4px 0 12px; }
+    .chip-set { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .pick {
+      font: inherit;
+      font-size: 13px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      border-radius: 999px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .pick.on { border-color: var(--accent); background: #F8E6D8; color: #7A3410; }
+    .pick.disabled { opacity: .35; cursor: not-allowed; }
+    .sheet-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+    .confirm {
+      background: var(--paper);
+      margin: auto 20px;
+      border-radius: 16px;
+      padding: 18px 16px 14px;
+      width: 100%;
+    }
+    .confirm p { margin: 0 0 14px; line-height: 1.6; }
+    .confirm .row { display: flex; gap: 8px; justify-content: flex-end; }
+    .note h2 { font-size: 15px; margin: 0 0 8px; }
+    .note p, .note li { font-size: 14px; line-height: 1.65; color: #44403C; }
+    .note ul { padding-left: 18px; margin: 8px 0 0; }
+    .sk {
+      height: 72px; border-radius: 16px; background: linear-gradient(90deg, #F0E7DB, #F7F1E8, #F0E7DB);
+      background-size: 200% 100%;
+      animation: shine 1.2s infinite;
+    }
+    @keyframes shine { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+  </style>
+</head>
+<body>
+  <div class="banner">
+    <strong>这是交互原型，不是正式产品。</strong>
+    分类和看图都是假的，关页数据会丢。用下面菜单把需求评审点名的状态翻一遍；也可以在「有数据」里自己贴一句走主流程。
+  </div>
+  <div class="toolbar">
+    <label for="font">字体方案</label>
+    <select id="font">
+      <option value="tool">1. 工具风 · 金句也用黑体</option>
+      <option value="clip" selected>2. 摘录风 · 界面黑体，金句宋体（推荐）</option>
+      <option value="notebook">3. 手账风 · 界面黑体，金句文楷</option>
+      <option value="letter">4. 信笺风 · 界面黑体，金句仿宋</option>
+    </select>
+  </div>
+  <div class="font-preview">
+    <div class="kicker" id="font-kicker">摘录风 · 金句用宋体</div>
+    <p class="sample">人间烟火气，最抚凡人心</p>
+  </div>
+  <div class="toolbar">
+    <label for="state">查看状态</label>
+    <select id="state">
+      <option value="cover" selected>封面 · 太阳</option>
+      <option value="cover-write">封面 · 点太阳写字</option>
+      <option value="lib-empty">列表 · 空库</option>
+      <option value="lib-classifying">片语 · 分类中</option>
+      <option value="lib-done">片语 · 分类完成</option>
+      <option value="lib-other">片语 · 其他 + 建议</option>
+      <option value="lib-list">列表 · 有数据</option>
+      <option value="lib-filter-empty">片语 · 筛选无结果</option>
+      <option value="lib-edit">片语 · 编辑中</option>
+      <option value="lib-delete">片语 · 删除确认</option>
+      <option value="match-empty">按图配文 · 空库</option>
+      <option value="match-idle">按图配文 · 未上传</option>
+      <option value="match-loading">按图配文 · 匹配中</option>
+      <option value="match-high">按图配文 · 把握高</option>
+      <option value="match-mid">按图配文 · 把握中</option>
+      <option value="match-low">按图配文 · 把握低</option>
+      <option value="match-fail">按图配文 · 看图失败</option>
+      <option value="match-copied">按图配文 · 复制成功</option>
+      <option value="match-copy-fail">按图配文 · 复制失败</option>
+    </select>
+  </div>
+
+  <div class="layout">
+    <div class="phone-wrap">
+      <div class="phone is-home is-cover" id="phone">
+        <div class="status-bar"></div>
+        <header class="topbar" id="topbar">
+          <button type="button" class="back" id="back">← 返回</button>
+          <h1 id="title">按图配文</h1>
+          <span class="spacer" id="title-spacer"></span>
+        </header>
+
+        <section class="page on" id="page-lib">
+          <div class="home-stack">
+            <div class="cover" id="cover">
+              <div class="sun-field" aria-hidden="true">
+                <span class="sun-ray"></span>
+                <span class="sun-ray r2"></span>
+                <span class="sun-ray r3"></span>
+                <span class="sun-ray r4"></span>
+              </div>
+              <button type="button" class="sun" id="sun" aria-label="记下一句"></button>
+              <button type="button" class="cover-match" id="cover-match">按图配文</button>
+            </div>
+            <div class="write-pane" id="write-pane">
+              <div class="write-glow">
+                <textarea id="draft" maxlength="500" placeholder="把想发的那句话贴在这里"></textarea>
+                <div class="write-actions">
+                  <button type="button" class="btn btn-text" id="write-cancel">收起</button>
+                  <button class="btn btn-primary" id="save" disabled>保存</button>
+                </div>
+              </div>
+            </div>
+            <div class="list-pane" id="list-pane">
+              <div class="list-handle" id="list-handle">下滑回到太阳</div>
+              <div class="filters" id="filters" hidden>
+                <select id="filter-scene"></select>
+                <select id="filter-mood"></select>
+              </div>
+              <div class="list" id="lib-list"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="page-match">
+          <input id="file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" hidden />
+          <div class="match-body" id="match-body"></div>
+        </section>
+
+        <button type="button" class="fab" id="fab">按图配文</button>
+        <div class="toast" id="toast"></div>
+        <div class="overlay" id="overlay"></div>
+      </div>
+    </div>
+    <aside class="note" id="note"></aside>
+  </div>
+
+<script>
+const SCENES = ["旅行","美食","风景自然","日常生活","人物自拍","宠物","夜色城市","工作学习","节日纪念日","其他"];
+const MOODS = ["松弛治愈","浪漫暧昧","幽默俏皮","孤独丧","热血励志","冷淡高级","珍惜感恩","其他"];
+const NOTES = {
+  "cover": "打开软件只见太阳。光圈往外散。点太阳写句子，点「按图配文」去配图，上滑才进入列表。",
+  "cover-write": "太阳打开成写字处。保存后收回到太阳。收起则不保存草稿到列表。",
+  "lib-empty": "上滑后的空列表。筛选条故意不出现。回到太阳才能继续记。",
+  "lib-classifying": "句子已经在列表顶上，只有标签在等。整页不能转圈，用户可以继续贴下一句。",
+  "lib-done": "分类完成后只换标签，不弹「成功」。",
+  "lib-other": "没把握就标其他，建议芯片可点可忽略。点了等于用户指定。",
+  "lib-list": "上滑后的句子列表。点卡片编辑；点复制只抄正文。下滑回到太阳。",
+  "lib-filter-empty": "筛选条保持现状，提供「换成全部」，不要做成报错页。",
+  "lib-edit": "底部面板。场景最多 2 个；点「其他」会清掉真实场景。遮罩 = 不保存。",
+  "lib-delete": "确认框主操作是取消。删了配图时不再出现。",
+  "match-empty": "库空时不假装能配。主行动是回到片语。",
+  "match-idle": "未上传时不要提前展示旧列表，避免误以为已经配过。",
+  "match-loading": "缩略图先出来，下面用骨架占位，禁止空白闪一下。",
+  "match-high": "上面最多 3 条推荐，下面仍有列表。P0 标题不带具体标签。",
+  "match-mid": "标题相同，列表才是重心。",
+  "match-low": "不假装很准。列表为主，可带 0～3 条仅供参考。",
+  "match-fail": "看图失败也必须能抄句子。换 jpg/png，不要死转圈。",
+  "match-copied": "轻提示即可，不要弹窗打断。",
+  "match-copy-fail": "微信里常发生。正文必须能长按选中。"
+};
+
+const SAMPLE = [
+  { id: "1", text: "人间烟火气，最抚凡人心", scenes: ["日常生活","美食"], mood: "松弛治愈", userScene: false, userMood: false, wait: false, suggest: [] },
+  { id: "2", text: "今晚的风不太适合说话", scenes: ["夜色城市"], mood: "孤独丧", userScene: false, userMood: false, wait: false, suggest: [] },
+  { id: "3", text: "把日子过成诗，也可以过成粥", scenes: ["日常生活"], mood: "松弛治愈", userScene: false, userMood: false, wait: false, suggest: [] },
+  { id: "4", text: "山川是故人，风是信", scenes: ["旅行","风景自然"], mood: "冷淡高级", userScene: false, userMood: false, wait: false, suggest: [] },
+  { id: "5", text: "你来的时候风很轻", scenes: ["人物自拍"], mood: "浪漫暧昧", userScene: false, userMood: false, wait: false, suggest: [] },
+  { id: "6", text: "先吃饭，再想人生", scenes: ["美食"], mood: "幽默俏皮", userScene: false, userMood: false, wait: false, suggest: [] }
+];
+
+let quotes = [];
+let tab = "lib";
+let homePane = "cover";
+let filterScene = "全部";
+let filterMood = "全部";
+let match = { image: false, loading: false, fail: false, level: null, thumb: "" };
+let editing = null;
+let toastTimer = 0;
+let saveLock = false;
+
+const $ = (id) => document.getElementById(id);
+
+const FONT_UI = '-apple-system, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif';
+const FONTS = {
+  tool: {
+    ui: FONT_UI,
+    quote: FONT_UI,
+    kicker: "工具风 · 金句也用黑体，像微信备忘录"
+  },
+  clip: {
+    ui: `"Noto Sans SC", ${FONT_UI}`,
+    quote: `"Noto Serif SC", "Songti SC", "STSong", serif`,
+    kicker: "摘录风 · 界面黑体，金句宋体"
+  },
+  notebook: {
+    ui: `"Noto Sans SC", ${FONT_UI}`,
+    quote: `"LXGW WenKai", "Kaiti SC", "STKaiti", "KaiTi", serif`,
+    kicker: "手账风 · 界面黑体，金句文楷"
+  },
+  letter: {
+    ui: `"Noto Sans SC", ${FONT_UI}`,
+    quote: `"STFangsong", "FangSong", "仿宋", "Noto Serif SC", serif`,
+    kicker: "信笺风 · 界面黑体，金句仿宋"
+  }
+};
+
+function applyFont(key) {
+  const f = FONTS[key] || FONTS.clip;
+  document.documentElement.style.setProperty("--font-ui", f.ui);
+  document.documentElement.style.setProperty("--font-quote", f.quote);
+  $("font-kicker").textContent = f.kicker;
+}
+
+function fillSelect(sel, label, items) {
+  sel.innerHTML = `<option value="全部">${label} 全部</option>` + items.map(x => `<option value="${x}">${x}</option>`).join("");
+}
+fillSelect($("filter-scene"), "场景", SCENES);
+fillSelect($("filter-mood"), "情绪", MOODS);
+
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2000);
+}
+
+async function copyQuote(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("已复制，去微信粘贴就行");
+  } catch {
+    toast("长按句子自己复制");
+  }
+}
+
+function guess(text) {
+  const t = text;
+  let scenes = [];
+  if (/吃|饭|粥|咖啡|火锅|美食/.test(t)) scenes.push("美食");
+  if (/夜|灯|月亮/.test(t)) scenes.push("夜色城市");
+  if (/山|川|海|旅行|路/.test(t)) scenes.push("旅行", "风景自然");
+  if (/猫|狗|宠物/.test(t)) scenes.push("宠物");
+  if (/班|工作|周一/.test(t)) scenes.push("工作学习");
+  scenes = [...new Set(scenes)].slice(0, 2);
+  let mood = "松弛治愈";
+  if (/笑|哈哈|再想人生/.test(t)) mood = "幽默俏皮";
+  if (/你来|想你|风很轻/.test(t)) mood = "浪漫暧昧";
+  if (/不适合说话|不想|丧/.test(t)) mood = "孤独丧";
+  if (/加油|冲/.test(t)) mood = "热血励志";
+  const confident = scenes.length > 0;
+  if (!confident) return { scenes: ["其他"], mood: "其他", suggest: ["日常生活", "松弛治愈"] };
+  return { scenes, mood, suggest: [] };
+}
+
+function visibleQuotes() {
+  return quotes.filter(q => {
+    const sOk = filterScene === "全部" || q.scenes.includes(filterScene);
+    const mOk = filterMood === "全部" || q.mood === filterMood;
+    return sOk && mOk;
+  });
+}
+
+function tagsHtml(q) {
+  if (q.wait) return `<span class="tag wait">分类中…</span>`;
+  return q.scenes.map(s => `<span class="tag">${s}</span>`).join("") + `<span class="tag">${q.mood}</span>`;
+}
+
+function renderLib() {
+  $("save").disabled = !$("draft").value.trim();
+  const emptyLib = quotes.length === 0;
+  $("filters").hidden = emptyLib;
+  const list = $("lib-list");
+  if (emptyLib) {
+    list.innerHTML = `<div class="empty">还没有金句。<br/>下滑回到太阳，点一下记下。</div>`;
+    return;
+  }
+  const vis = visibleQuotes();
+  if (!vis.length) {
+    list.innerHTML = `<div class="empty">这个分类下还没有句子。<br/><button class="btn btn-text" id="reset-filter">换成全部</button></div>`;
+    $("reset-filter")?.addEventListener("click", () => {
+      filterScene = "全部"; filterMood = "全部";
+      $("filter-scene").value = "全部"; $("filter-mood").value = "全部";
+      renderLib();
+    });
+    return;
+  }
+  list.innerHTML = vis.map(q => `
+    <div class="card" data-id="${q.id}" style="cursor:pointer;">
+      <p class="card-quote clamp">${escapeHtml(q.text)}</p>
+      <div class="card-foot">
+        <div class="tags">${tagsHtml(q)}</div>
+        <button type="button" class="btn btn-text copy-lib" data-copy="${escapeHtml(q.text)}">复制</button>
+      </div>
+      ${q.suggest?.length && (q.scenes.includes("其他") || q.mood === "其他") ? `<div class="suggest">
+        ${q.suggest.map(s => `<span class="chip" data-suggest="${s}" data-id="${q.id}">建议：${s}</span>`).join("")}
+      </div>` : ""}
+    </div>`).join("");
+  list.querySelectorAll(".card").forEach(el => el.addEventListener("click", (e) => {
+    if (e.target.closest("[data-copy], [data-suggest]")) return;
+    openEdit(el.dataset.id);
+  }));
+  list.querySelectorAll("[data-copy]").forEach(btn => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    copyQuote(btn.getAttribute("data-copy"));
+  }));
+  list.querySelectorAll("[data-suggest]").forEach(el => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    applySuggest(el.dataset.id, el.dataset.suggest);
+  }));
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+}
+
+function applySuggest(id, value) {
+  const q = quotes.find(x => x.id === id);
+  if (!q) return;
+  if (SCENES.includes(value)) {
+    q.scenes = value === "其他" ? ["其他"] : [value];
+    q.userScene = true;
+  }
+  if (MOODS.includes(value)) {
+    q.mood = value;
+    q.userMood = true;
+  }
+  q.suggest = [];
+  renderLib();
+}
+
+function waterfall(levelHint) {
+  const imgScene = "夜色城市";
+  const imgMood = "松弛治愈";
+  const layer1 = quotes.filter(q => q.scenes.some(s => s === imgScene) && q.mood === imgMood);
+  const layer2 = quotes.filter(q => q.scenes.some(s => s === imgScene));
+  const layer3 = quotes.filter(q => q.mood === imgMood);
+  let rec = [];
+  let related = [];
+  let title = "比较适合这张图的几句";
+  let level = levelHint;
+  if (!quotes.length) return { rec, related, title, level: "empty" };
+  if (levelHint === "high") {
+    rec = (layer1.length ? layer1 : layer2).slice(0, 3);
+    related = (layer1.length ? quotes.filter(q => q.scenes.includes(imgScene) || q.mood === imgMood) : quotes);
+    if (!related.length) related = quotes;
+  } else if (levelHint === "mid") {
+    rec = (layer2.length ? layer2 : layer3).slice(0, 3);
+    related = layer2.length ? layer2 : (layer3.length ? layer3 : quotes);
+    title = "比较适合这张图的几句";
+  } else if (levelHint === "low") {
+    rec = quotes.slice(0, 2);
+    related = quotes;
+    title = "没找到特别贴的，先按分类看";
+  } else if (levelHint === "fail") {
+    rec = [];
+    related = quotes;
+    title = "这张图暂时对不上分类，先从全部里面挑";
+  } else {
+    if (layer1.length) { level = "high"; rec = layer1.slice(0,3); related = quotes; }
+    else if (layer2.length || layer3.length) { level = "mid"; rec = (layer2.length?layer2:layer3).slice(0,3); related = layer2.length?layer2:layer3; }
+    else { level = "low"; rec = []; related = quotes; title = "没找到特别贴的，先按分类看"; }
+  }
+  return { rec, related, title, level };
+}
+
+function quoteRow(q, opts = {}) {
+  return `<div class="rec">
+    <div class="card">
+      ${opts.ref ? `<div class="ref">仅供参考</div>` : ""}
+      <p class="card-quote">${escapeHtml(q.text)}</p>
+      <div class="tags">${tagsHtml(q)}</div>
+    </div>
+    <button class="btn btn-primary copy-btn" data-copy="${escapeHtml(q.text)}">复制</button>
+  </div>`;
+}
+
+function renderMatch() {
+  const box = $("match-body");
+  if (!quotes.length) {
+    box.innerHTML = `
+      <div class="upload" id="upload-hit">
+        <strong>上传一张朋友圈图</strong>
+        <span>从自己的句子里配</span>
+      </div>
+      <div class="empty">库是空的，现在配不出句子。<br/><button class="btn btn-primary" id="go-lib" style="margin-top:12px;">返回记一句</button></div>`;
+    $("upload-hit")?.addEventListener("click", () => $("file").click());
+    $("go-lib")?.addEventListener("click", () => switchTab("lib"));
+    return;
+  }
+  let top = "";
+  if (match.image) {
+    top = `<div class="thumb-row">
+      <div class="thumb" style="${match.thumb ? `background:url('${match.thumb}') center/cover` : ""}"></div>
+      <div>
+        <div>${match.fail ? "这张图看不了，换一张 jpg 或 png 试试。" : (match.loading ? "正在看图找句子…" : "从这张图里找句子")}</div>
+        <button class="btn btn-text" id="reup">换一张</button>
+      </div>
+    </div>`;
+  } else {
+    top = `<div class="upload" id="upload-hit">
+      <strong>上传一张朋友圈图</strong>
+      <span>从自己的句子里配</span>
+    </div>`;
+  }
+  let rest = "";
+  if (match.loading) {
+    rest = `<div class="sk"></div><div class="sk"></div>`;
+  } else if (match.image) {
+    const w = waterfall(match.level);
+    if (match.fail) {
+      rest = `<div class="banner-in">这次没看清，下面先按分类给你看。</div>
+        <h2 class="block">${w.title}</h2>
+        ${w.related.map(q => quoteRow(q)).join("")}`;
+    } else if (w.level === "low") {
+      rest = `<h2 class="block">${w.title}</h2>
+        ${w.rec.map(q => quoteRow(q, { ref: true })).join("")}
+        <h2 class="block">相关分类里的全部文案</h2>
+        ${w.related.map(q => quoteRow(q)).join("")}`;
+    } else {
+      rest = `<h2 class="block">${w.title}</h2>
+        ${w.rec.map(q => quoteRow(q)).join("")}
+        <h2 class="block">相关分类里的全部文案</h2>
+        ${w.related.map(q => quoteRow(q)).join("")}`;
+    }
+  }
+  box.innerHTML = top + rest;
+  $("upload-hit")?.addEventListener("click", () => $("file").click());
+  $("reup")?.addEventListener("click", () => $("file").click());
+  box.querySelectorAll("[data-copy]").forEach(btn => btn.addEventListener("click", () => {
+    copyQuote(btn.getAttribute("data-copy"));
+  }));
+}
+
+$("file").addEventListener("change", () => {
+  const f = $("file").files?.[0];
+  if (!f) return;
+  match.image = true;
+  match.loading = true;
+  match.fail = false;
+  match.level = null;
+  if (match.thumb && match.thumb.startsWith("blob:")) URL.revokeObjectURL(match.thumb);
+  match.thumb = URL.createObjectURL(f);
+  renderMatch();
+  setTimeout(() => {
+    match.loading = false;
+    match.level = null;
+    renderMatch();
+  }, 1200);
+  $("file").value = "";
+});
+
+function setHomePane(pane) {
+  homePane = pane;
+  const p = $("phone");
+  p.classList.toggle("is-cover", pane === "cover");
+  p.classList.toggle("is-write", pane === "write");
+  p.classList.toggle("is-list", pane === "list");
+  if (pane === "list") renderLib();
+  if (pane === "write") {
+    $("save").disabled = !$("draft").value.trim();
+    setTimeout(() => $("draft").focus(), 50);
+  }
+}
+
+function switchTab(name) {
+  tab = name;
+  const home = name === "lib";
+  $("phone").classList.toggle("is-home", home);
+  $("page-lib").classList.toggle("on", home);
+  $("page-match").classList.toggle("on", !home);
+  $("title").textContent = "按图配文";
+  if (home) {
+    setHomePane(homePane === "write" ? "write" : homePane);
+    renderLib();
+  } else {
+    $("phone").classList.remove("is-cover", "is-write", "is-list");
+    renderMatch();
+  }
+}
+
+function openEdit(id) {
+  const q = quotes.find(x => x.id === id);
+  if (!q) return;
+  editing = { ...q, scenes: [...q.scenes] };
+  drawSheet();
+}
+
+function drawSheet(confirmDel = false) {
+  const ov = $("overlay");
+  ov.classList.add("show");
+  if (confirmDel) {
+    ov.innerHTML = `<div class="confirm">
+      <p>删除这句？删除后配图时不会再出现。</p>
+      <div class="row">
+        <button class="btn btn-danger" id="do-del">删除</button>
+        <button class="btn btn-primary" id="cancel-del">取消</button>
+      </div>
+    </div>`;
+    $("cancel-del").onclick = () => drawSheet(false);
+    $("do-del").onclick = () => {
+      quotes = quotes.filter(x => x.id !== editing.id);
+      editing = null;
+      ov.classList.remove("show");
+      renderLib();
+    };
+    ov.onclick = (e) => { if (e.target === ov) drawSheet(false); };
+    return;
+  }
+  const sceneChips = SCENES.map(s => {
+    const on = editing.scenes.includes(s);
+    const realCount = editing.scenes.filter(x => x !== "其他").length;
+    const blocked = !on && s !== "其他" && (editing.scenes.includes("其他") ? false : realCount >= 2);
+    return `<button type="button" class="pick ${on?"on":""} ${blocked?"disabled":""}" data-scene="${s}">${s}</button>`;
+  }).join("");
+  const moodChips = MOODS.map(m => `<button type="button" class="pick ${editing.mood===m?"on":""}" data-mood="${m}">${m}</button>`).join("");
+  ov.innerHTML = `<div class="sheet">
+    <h3>编辑金句</h3>
+    <textarea id="edit-text" maxlength="500" rows="4">${escapeHtml(editing.text)}</textarea>
+    <div class="counter"><span id="cc">${[...editing.text].length}</span>/500</div>
+    <div style="font-size:13px;margin-bottom:6px;color:var(--muted)">场景（1～2 个）</div>
+    <div class="chip-set" id="sc">${sceneChips}</div>
+    <div style="font-size:13px;margin-bottom:6px;color:var(--muted)">情绪（选 1 个）</div>
+    <div class="chip-set" id="md">${moodChips}</div>
+    <div class="sheet-actions">
+      <button class="btn btn-danger" id="ask-del">删除</button>
+      <button class="btn btn-primary" id="save-edit">保存修改</button>
+    </div>
+  </div>`;
+  const text = $("edit-text");
+  text.oninput = () => {
+    editing.text = text.value.slice(0, 500);
+    $("cc").textContent = [...editing.text].length;
+  };
+  ov.querySelectorAll("[data-scene]").forEach(btn => btn.onclick = () => {
+    const s = btn.dataset.scene;
+    if (s === "其他") editing.scenes = ["其他"];
+    else {
+      editing.scenes = editing.scenes.filter(x => x !== "其他");
+      if (editing.scenes.includes(s)) editing.scenes = editing.scenes.filter(x => x !== s);
+      else if (editing.scenes.length < 2) editing.scenes.push(s);
+      if (!editing.scenes.length) editing.scenes = ["其他"];
+    }
+    drawSheet();
+  });
+  ov.querySelectorAll("[data-mood]").forEach(btn => btn.onclick = () => {
+    editing.mood = btn.dataset.mood;
+    drawSheet();
+  });
+  $("ask-del").onclick = () => drawSheet(true);
+  $("save-edit").onclick = () => {
+    const textVal = editing.text.trim();
+    if (!textVal) { toast("先写一句"); return; }
+    if ([...textVal].length > 500) { toast("最多 500 字"); return; }
+    const orig = quotes.find(x => x.id === editing.id);
+    const sceneChanged = orig.scenes.join() !== editing.scenes.join();
+    const moodChanged = orig.mood !== editing.mood;
+    orig.text = textVal;
+    orig.scenes = editing.scenes;
+    orig.mood = editing.mood;
+    if (sceneChanged) orig.userScene = true;
+    if (moodChanged) orig.userMood = true;
+    editing = null;
+    ov.classList.remove("show");
+    renderLib();
+  };
+  ov.onclick = (e) => {
+    if (e.target === ov) { editing = null; ov.classList.remove("show"); }
+  };
+}
+
+$("draft").addEventListener("input", () => { $("save").disabled = !$("draft").value.trim(); });
+$("save").addEventListener("click", () => {
+  if (saveLock) return;
+  const text = $("draft").value.replace(/^\s+|\s+$/g, "");
+  if (!text) { toast("先写一句"); return; }
+  if ([...text].length > 500) { toast("最多 500 字"); return; }
+  if (quotes.some(q => q.text.replace(/^\s+|\s+$/g, "") === text)) { toast("库里已有这句"); return; }
+  saveLock = true;
+  const id = String(Date.now());
+  quotes.unshift({ id, text, scenes: ["其他"], mood: "其他", wait: true, suggest: [], userScene: false, userMood: false });
+  $("draft").value = "";
+  $("save").disabled = true;
+  toast("记下了");
+  setHomePane("cover");
+  renderLib();
+  const guessed = guess(text);
+  setTimeout(() => {
+    const q = quotes.find(x => x.id === id);
+    if (q && !q.userScene && !q.userMood && q.wait) {
+      q.wait = false;
+      q.scenes = guessed.scenes;
+      q.mood = guessed.mood;
+      q.suggest = guessed.suggest;
+      renderLib();
+    }
+    saveLock = false;
+  }, 1100);
+});
+$("filter-scene").addEventListener("change", e => { filterScene = e.target.value; renderLib(); });
+$("filter-mood").addEventListener("change", e => { filterMood = e.target.value; renderLib(); });
+$("fab").addEventListener("click", () => switchTab("match"));
+$("cover-match").addEventListener("click", () => switchTab("match"));
+$("back").addEventListener("click", () => switchTab("lib"));
+$("sun").addEventListener("click", () => setHomePane("write"));
+$("write-cancel").addEventListener("click", () => setHomePane("cover"));
+$("list-handle").addEventListener("click", () => setHomePane("cover"));
+
+let swipeY = null;
+function pointY(e) {
+  return e.touches ? e.touches[0].clientY : e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+}
+$("cover").addEventListener("pointerdown", (e) => { swipeY = e.clientY; });
+$("cover").addEventListener("pointerup", (e) => {
+  if (swipeY == null) return;
+  if (e.clientY - swipeY < -48) setHomePane("list");
+  swipeY = null;
+});
+$("cover").addEventListener("wheel", (e) => {
+  if (e.deltaY > 24) setHomePane("list");
+}, { passive: true });
+$("list-pane").addEventListener("pointerdown", (e) => { swipeY = e.clientY; });
+$("list-pane").addEventListener("pointerup", (e) => {
+  if (swipeY == null) return;
+  const list = $("lib-list");
+  if (list.scrollTop <= 0 && e.clientY - swipeY > 56) setHomePane("cover");
+  swipeY = null;
+});
+
+function loadSample() {
+  quotes = SAMPLE.map(q => ({ ...q, scenes: [...q.scenes] }));
+}
+
+function applyState(key) {
+  $("overlay").classList.remove("show");
+  $("overlay").innerHTML = "";
+  editing = null;
+  match = { image: false, loading: false, fail: false, level: null, thumb: "" };
+  filterScene = "全部"; filterMood = "全部";
+  $("filter-scene").value = "全部"; $("filter-mood").value = "全部";
+  $("draft").value = "";
+  $("note").innerHTML = `<h2>这一屏在教什么</h2><p>${NOTES[key] || ""}</p>
+    <ul>
+      <li>正式产品没有顶部黄色条和这个菜单。</li>
+      <li>原型分类按关键词瞎猜，上线后会换成模型。</li>
+    </ul>`;
+
+  if (key === "cover") {
+    loadSample(); homePane = "cover"; switchTab("lib"); return;
+  }
+  if (key === "cover-write") {
+    loadSample(); homePane = "write"; switchTab("lib"); return;
+  }
+  if (key === "lib-empty") {
+    quotes = []; homePane = "list"; switchTab("lib"); return;
+  }
+  if (key === "lib-classifying") {
+    loadSample();
+    quotes.unshift({ id: "w", text: "晚风把路灯吹成一句未说完的话", scenes: ["其他"], mood: "其他", wait: true, suggest: [] });
+    homePane = "list"; switchTab("lib"); return;
+  }
+  if (key === "lib-done") {
+    loadSample(); homePane = "list"; switchTab("lib"); return;
+  }
+  if (key === "lib-other") {
+    loadSample();
+    quotes.unshift({ id: "o", text: "有些句子暂时不知道该放哪", scenes: ["其他"], mood: "其他", wait: false, suggest: ["日常生活","孤独丧"] });
+    homePane = "list"; switchTab("lib"); return;
+  }
+  if (key === "lib-list") { loadSample(); homePane = "list"; switchTab("lib"); return; }
+  if (key === "lib-filter-empty") {
+    loadSample(); filterScene = "节日纪念日"; $("filter-scene").value = "节日纪念日"; homePane = "list"; switchTab("lib"); return;
+  }
+  if (key === "lib-edit") { loadSample(); homePane = "list"; switchTab("lib"); openEdit("1"); return; }
+  if (key === "lib-delete") { loadSample(); homePane = "list"; switchTab("lib"); openEdit("2"); drawSheet(true); return; }
+  if (key === "match-empty") { quotes = []; switchTab("match"); return; }
+  loadSample();
+  if (key === "match-idle") { switchTab("match"); return; }
+  match.image = true;
+  if (key === "match-loading") { match.loading = true; switchTab("match"); return; }
+  if (key === "match-high") { match.level = "high"; switchTab("match"); return; }
+  if (key === "match-mid") { match.level = "mid"; switchTab("match"); return; }
+  if (key === "match-low") { match.level = "low"; switchTab("match"); return; }
+  if (key === "match-fail") { match.fail = true; match.level = "fail"; switchTab("match"); return; }
+  if (key === "match-copied") { match.level = "high"; switchTab("match"); toast("已复制，去微信粘贴就行"); return; }
+  if (key === "match-copy-fail") { match.level = "high"; switchTab("match"); toast("长按句子自己复制"); return; }
+}
+
+$("state").addEventListener("change", e => applyState(e.target.value));
+$("font").addEventListener("change", e => applyFont(e.target.value));
+applyFont("clip");
+applyState("cover");
+</script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>片语</title>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="片语" />
+    <meta name="theme-color" content="#F4EFE6" />
+    <style>
+      html, body, #app {
+        margin: 0;
+        height: 100%;
+        background: #F4EFE6;
+        overflow: hidden;
+      }
+      body { position: fixed; inset: 0; width: 100%; }
+      .boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #F4EFE6;
+      }
+      .boot-glow {
+        width: min(72vw, 280px);
+        height: min(72vw, 280px);
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 250, 236, 0.85) 0%,
+          rgba(252, 220, 150, 0.35) 28%,
+          rgba(240, 176, 88, 0.12) 52%,
+          rgba(244, 239, 230, 0) 72%
+        );
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="boot" aria-hidden="true"><div class="boot-glow"></div></div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

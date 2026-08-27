@@ -1,0 +1,12 @@
+{
+  "name": "pianyu",
+  "private": true,
+  "scripts": {
+    "dev:web": "npm --prefix web run dev",
+    "dev:server": "npm --prefix server run dev",
+    "test": "npm --prefix web run test",
+    "build": "npm --prefix web run build",
+    "start": "npm run build && npm --prefix server start",
+    "pages": "zsh scripts/publish-pages.sh"
+  }
+}
