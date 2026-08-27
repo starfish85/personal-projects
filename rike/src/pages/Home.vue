@@ -30,6 +30,7 @@ import {
   toggleSubtask,
   updateTask,
 } from '../stores/practice'
+import MonthCal from '../components/MonthCal.vue'
 import SyncBar from '../components/SyncBar.vue'
 import TimePicker from '../components/TimePicker.vue'
 import { cloud } from '../stores/sync'
@@ -68,10 +69,11 @@ const fromHomeDate = ref('')
 const backupNag = ref(false)
 const pickerOpen = ref(false)
 const pickerDraft = ref('')
+const dueCalOpen = ref(false)
 const daysByTask = ref({})
 const pageRef = ref(null)
 
-const todayKey = computed(() => practice.date || localDateKey())
+const todayKey = computed(() => localDateKey())
 const viewingDate = computed(() => practice.viewingDate || todayKey.value)
 const viewMode = computed(() => dateMode(viewingDate.value, todayKey.value))
 const yesterdayKey = computed(() => shiftDateKey(todayKey.value, -1))
@@ -169,6 +171,7 @@ function openAdd() {
   form.color = TASK_COLORS.find((c) => !practice.tasks.some((t) => t.color === c)) || form.color
   editorStep.value = 'template'
   editor.value = { mode: 'add' }
+  dueCalOpen.value = false
 }
 
 function openEdit(task) {
@@ -196,6 +199,7 @@ function openEdit(task) {
     'custom'
   editorStep.value = 'details'
   editor.value = { mode: 'edit', id: task.id }
+  dueCalOpen.value = false
 }
 
 function addSubtaskField() {
@@ -262,6 +266,7 @@ function setLongTerm(on) {
 function finishClose({ calendarDate } = {}) {
   editor.value = null
   editorStep.value = 'details'
+  dueCalOpen.value = false
   saving.value = false
   fromCalendarDate.value = ''
   fromHomeDate.value = ''
@@ -510,9 +515,10 @@ async function goToday() {
   await setViewingDate(todayKey.value)
 }
 
-async function onPickerDate(event) {
-  const value = event.target.value
-  if (value) await setViewingDate(value)
+function setDueDate(dateKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return
+  form.dueDate = dateKey
+  dueCalOpen.value = false
 }
 
 function featuredTask() {
@@ -549,7 +555,7 @@ function featureKicker() {
 function featureCta(task) {
   if (!task) return '打开'
   if (viewMode.value === 'past') return hasSubtasks(task) ? '查看' : '只读'
-  if (viewMode.value === 'future') return '改安排'
+  if (viewMode.value === 'future') return '还没到'
   if (isDone(task)) return '回看今天'
   if (task.completion === 'counter' && (task.sheet || task.components?.includes('sheet'))) {
     return '打开曲谱'
@@ -557,6 +563,19 @@ function featureCta(task) {
   if (task.completion === 'counter') return '开始练习'
   if (task.completion === 'photo-log') return '去打卡'
   return '打开'
+}
+
+function openTaskFromHome(task) {
+  if (!task) return
+  if (viewMode.value === 'past') {
+    if (hasSubtasks(task)) expandedId.value = expandedId.value === task.id ? null : task.id
+    return
+  }
+  if (viewMode.value === 'future') {
+    toast('还没到这一天，不能打卡。')
+    return
+  }
+  router.push(`/task/${task.id}`)
 }
 
 function onFeatureClick(task) {
@@ -569,15 +588,7 @@ function onFeatureClick(task) {
     closeSwipe()
     return
   }
-  if (viewMode.value === 'past') {
-    if (hasSubtasks(task)) expandedId.value = expandedId.value === task.id ? null : task.id
-    return
-  }
-  if (viewMode.value === 'future') {
-    openEdit(task)
-    return
-  }
-  router.push(`/task/${task.id}`)
+  openTaskFromHome(task)
 }
 
 function archivedTasks() {
@@ -678,23 +689,7 @@ function onCardClick(task) {
     closeSwipe()
     return
   }
-  if (viewMode.value === 'past') {
-    if (hasSubtasks(task)) expandedId.value = expandedId.value === task.id ? null : task.id
-    return
-  }
-  if (viewMode.value === 'future') {
-    if (hasSubtasks(task)) {
-      expandedId.value = expandedId.value === task.id ? null : task.id
-      return
-    }
-    openEdit(task)
-    return
-  }
-  if (hasSubtasks(task)) {
-    expandedId.value = expandedId.value === task.id ? null : task.id
-    return
-  }
-  router.push(`/task/${task.id}`)
+  openTaskFromHome(task)
 }
 
 async function quickCheck(task) {
@@ -786,13 +781,13 @@ async function toggleSub(task, subtask) {
       <div
         v-if="featured"
         class="swipe feature-swipe"
-        :class="{ done: isDone(featured), expanded: expandedId === featured.id }"
+        :class="{ done: isDone(featured), expanded: expandedId === featured.id, open: openId === featured.id }"
         :style="{ '--task': featured.color }"
       >
         <div class="actions" aria-hidden="true">
-          <button type="button" class="act edit" @click="openEdit(featured)">修改</button>
-          <button type="button" class="act del" @click="deleteFromList(featured)">归档</button>
-          <button type="button" class="act pin" @click="pinFromList(featured)">
+          <button type="button" class="act edit" @click.stop="openEdit(featured)">修改</button>
+          <button type="button" class="act del" @click.stop="deleteFromList(featured)">归档</button>
+          <button type="button" class="act pin" @click.stop="pinFromList(featured)">
             {{ featured.pinned ? '取消' : '置顶' }}
           </button>
         </div>
@@ -824,13 +819,13 @@ async function toggleSub(task, subtask) {
         v-for="task in restTasks()"
         :key="task.id"
         class="swipe"
-        :class="{ done: isDone(task), expanded: expandedId === task.id }"
+        :class="{ done: isDone(task), expanded: expandedId === task.id, open: openId === task.id }"
         :style="{ '--task': task.color }"
       >
         <div class="actions" aria-hidden="true">
-          <button type="button" class="act edit" @click="openEdit(task)">修改</button>
-          <button type="button" class="act del" @click="deleteFromList(task)">归档</button>
-          <button type="button" class="act pin" @click="pinFromList(task)">
+          <button type="button" class="act edit" @click.stop="openEdit(task)">修改</button>
+          <button type="button" class="act del" @click.stop="deleteFromList(task)">归档</button>
+          <button type="button" class="act pin" @click.stop="pinFromList(task)">
             {{ task.pinned ? '取消' : '置顶' }}
           </button>
         </div>
@@ -984,10 +979,15 @@ async function toggleSub(task, subtask) {
             <button v-if="form.reminder" type="button" class="off" @click="form.reminder = ''">关</button>
           </div>
           <div class="date-row">
-            <label>
-              <span>完成日期</span>
-              <input v-model="form.dueDate" type="date" />
-            </label>
+            <div class="due-cal">
+              <div class="time-row">
+                <span>完成日期</span>
+                <button type="button" class="time" @click="dueCalOpen = !dueCalOpen">
+                  {{ formatDayTitle(form.dueDate) }}
+                </button>
+              </div>
+              <MonthCal v-if="dueCalOpen" :selected="form.dueDate" :today="todayKey" @pick="setDueDate" />
+            </div>
             <label class="toggle">
               <input
                 type="checkbox"
@@ -1119,10 +1119,7 @@ async function toggleSub(task, subtask) {
             明天
           </button>
         </div>
-        <label class="picker-date">
-          <span>选择日期</span>
-          <input :value="viewingDate" type="date" @change="onPickerDate" />
-        </label>
+        <MonthCal :selected="viewingDate" :today="todayKey" @pick="setViewingDate" />
         <p class="modal-copy">{{ pickerTitle }}</p>
       </div>
     </div>
@@ -1251,26 +1248,6 @@ async function toggleSub(task, subtask) {
   color: var(--ink);
 }
 
-.picker-date {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-}
-
-.picker-date input {
-  flex: 1;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 16px;
-}
-
 .feature-card {
   position: relative;
 }
@@ -1339,6 +1316,12 @@ async function toggleSub(task, subtask) {
   inset: 0 0 0 auto;
   display: flex;
   width: 192px;
+  pointer-events: none;
+}
+
+.swipe.open .actions,
+.swipe:has(.card.dragging) .actions {
+  pointer-events: auto;
 }
 
 .act {
@@ -1701,27 +1684,20 @@ async function toggleSub(task, subtask) {
   margin: 0 0 16px;
 }
 
+.date-row .due-cal {
+  display: grid;
+  gap: 4px;
+}
+
+.date-row .due-cal .time-row {
+  margin: 0;
+}
+
 .date-row label {
   display: flex;
   align-items: center;
   gap: 10px;
   color: var(--muted);
-}
-
-.date-row label:first-child span {
-  flex: 0 0 auto;
-}
-
-.date-row input[type='date'] {
-  flex: 1;
-  min-width: 0;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 16px;
 }
 
 .date-row .toggle {
