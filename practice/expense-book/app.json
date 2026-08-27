@@ -1,0 +1,12 @@
+{
+  "pages": ["pages/index/index"],
+  "window": {
+    "navigationBarTitleText": "衣食住行记账",
+    "navigationBarBackgroundColor": "#f4f1ea",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f4f1ea",
+    "backgroundTextStyle": "light"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

@@ -1,0 +1,9 @@
+{
+  "name": "衣食住行记账",
+  "short_name": "记账",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f1ea",
+  "theme_color": "#f4f1ea",
+  "lang": "zh-CN"
+}

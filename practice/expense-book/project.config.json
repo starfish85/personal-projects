@@ -1,0 +1,49 @@
+{
+  "description": "衣食住行记账",
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "web"
+      },
+      {
+        "type": "file",
+        "value": "README.md"
+      },
+      {
+        "type": "file",
+        "value": "start-phone.sh"
+      },
+      {
+        "type": "file",
+        "value": "ledger.js"
+      },
+      {
+        "type": "file",
+        "value": "index.html"
+      }
+    ],
+    "include": []
+  },
+  "setting": {
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "enhance": true,
+    "compileHotReLoad": true,
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "coverView": true,
+    "urlCheck": true,
+    "ignoreUploadUnusedFiles": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.8.0",
+  "appid": "touristappid",
+  "projectname": "expense-book",
+  "condition": {},
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  }
+}

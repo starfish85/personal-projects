@@ -1,0 +1,9 @@
+{
+  "desc": "衣食住行记账",
+  "rules": [
+    {
+      "action": "allow",
+      "page": "*"
+    }
+  ]
+}

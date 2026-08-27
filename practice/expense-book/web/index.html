@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="衣食住行记账" />
+  <meta name="theme-color" content="#f4f1ea" />
+  <link rel="manifest" href="./manifest.json" />
+  <title>衣食住行记账</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --card: #fffcf7;
+      --ink: #2c261e;
+      --muted: #7a7268;
+      --line: #e6dfd4;
+      --accent: #c45c26;
+      --衣: #c45c7a;
+      --食: #d4782a;
+      --住: #3d8b7a;
+      --行: #3a6ea5;
+      --其他: #8a8378;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    .page {
+      max-width: 440px;
+      margin: 0 auto;
+      padding: 24px 16px calc(48px + env(safe-area-inset-bottom));
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 22px;
+      font-weight: 650;
+    }
+
+    .sub {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+      font-size: 16px;
+      margin-bottom: 12px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    input:focus {
+      outline: 2px solid #e8c4a8;
+      border-color: var(--accent);
+    }
+
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 16px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .hint {
+      margin: 8px 0 0;
+      min-height: 18px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .hint.error { color: #b42318; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat {
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+
+    .stat .name { font-size: 13px; color: var(--muted); }
+    .stat .num { font-size: 20px; font-weight: 650; margin-top: 4px; }
+
+    .stat.衣 .num { color: var(--衣); }
+    .stat.食 .num { color: var(--食); }
+    .stat.住 .num { color: var(--住); }
+    .stat.行 .num { color: var(--行); }
+    .stat.其他 { grid-column: 1 / -1; }
+    .stat.其他 .num { color: var(--其他); }
+
+    .list { list-style: none; margin: 0; padding: 0; }
+    .list li {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 14px;
+    }
+    .list li:last-child { border-bottom: 0; }
+    .tag {
+      flex: 0 0 auto;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #eeeae3;
+    }
+    .tag.衣 { background: #f8e4ea; color: var(--衣); }
+    .tag.食 { background: #fbe9d8; color: var(--食); }
+    .tag.住 { background: #dceee9; color: var(--住); }
+    .tag.行 { background: #dce6f2; color: var(--行); }
+
+    .meta { color: var(--muted); }
+    .empty { color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>衣食住行记账</h1>
+    <p class="sub">输入金额和备注，按关键字自动分类</p>
+
+    <form class="card" id="form">
+      <label for="amount">金额</label>
+      <input id="amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="例如 28" required />
+      <label for="note">备注</label>
+      <input id="note" type="text" placeholder="例如 午饭、滴滴、优衣库" required />
+      <button type="submit">记一笔</button>
+      <p class="hint" id="hint"></p>
+    </form>
+
+    <div class="card">
+      <div class="stats">
+        <div class="stat 衣"><div class="name">衣</div><div class="num" id="sum-衣">0</div></div>
+        <div class="stat 食"><div class="name">食</div><div class="num" id="sum-食">0</div></div>
+        <div class="stat 住"><div class="name">住</div><div class="num" id="sum-住">0</div></div>
+        <div class="stat 行"><div class="name">行</div><div class="num" id="sum-行">0</div></div>
+        <div class="stat 其他"><div class="name">其他</div><div class="num" id="sum-其他">0</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <ul class="list" id="list">
+        <li class="empty">还没有记录</li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="../utils/ledger.js"></script>
+  <script>
+    const STORAGE_KEY = "expense-book-ledger";
+
+    function loadLedger() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (Array.isArray(saved)) {
+          清空账本();
+          账本.push(...saved);
+        }
+      } catch (err) {
+        console.warn("读取本地账本失败", err);
+      }
+    }
+
+    function saveLedger() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(账本));
+    }
+
+    function formatMoney(n) {
+      return Number(n).toFixed(2);
+    }
+
+    function render(totals) {
+      const data = totals || 统计();
+      for (const key of ["衣", "食", "住", "行", "其他"]) {
+        document.getElementById("sum-" + key).textContent = formatMoney(data[key]);
+      }
+
+      const list = document.getElementById("list");
+      if (账本.length === 0) {
+        list.innerHTML = '<li class="empty">还没有记录</li>';
+        return;
+      }
+
+      list.innerHTML = 账本
+        .slice()
+        .reverse()
+        .map(function (item) {
+          return (
+            "<li>" +
+            "<span>" +
+            '<span class="tag ' + item.分类结果 + '">' + item.分类结果 + "</span> " +
+            (item.备注 || "（无备注）") +
+            "</span>" +
+            '<span class="meta">' + formatMoney(item.金额) + "</span>" +
+            "</li>"
+          );
+        })
+        .join("");
+    }
+
+    document.getElementById("form").addEventListener("submit", function (event) {
+      event.preventDefault();
+      const hint = document.getElementById("hint");
+      const amount = Number(document.getElementById("amount").value);
+      const note = document.getElementById("note").value.trim();
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        hint.className = "hint error";
+        hint.textContent = "请输入大于 0 的金额";
+        return;
+      }
+      if (!note) {
+        hint.className = "hint error";
+        hint.textContent = "请输入备注";
+        return;
+      }
+
+      const totals = 记一笔(amount, note);
+      saveLedger();
+      render(totals);
+
+      const last = 账本[账本.length - 1];
+      hint.className = "hint";
+      hint.textContent = "已记入「" + last.分类结果 + "」";
+      document.getElementById("amount").value = "";
+      document.getElementById("note").value = "";
+      document.getElementById("amount").focus();
+    });
+
+    loadLedger();
+    render();
+  </script>
+</body>
+</html>

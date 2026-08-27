@@ -1,0 +1,64 @@
+<view class="page">
+  <view class="hero">
+    <view class="title">衣食住行记账</view>
+    <view class="sub">输入金额和备注，按关键字自动分类</view>
+  </view>
+
+  <view class="card">
+    <view class="label">金额</view>
+    <input
+      class="field"
+      type="digit"
+      placeholder="例如 28"
+      value="{{amount}}"
+      bindinput="onAmount"
+    />
+    <view class="label">备注</view>
+    <input
+      class="field"
+      placeholder="例如 午饭、滴滴、优衣库"
+      value="{{note}}"
+      confirm-type="done"
+      bindinput="onNote"
+      bindconfirm="onSubmit"
+    />
+    <button class="submit" bindtap="onSubmit">记一笔</button>
+    <view class="hint {{hintError ? 'error' : ''}}">{{hint}}</view>
+  </view>
+
+  <view class="card stats">
+    <view class="stat">
+      <view class="name">衣</view>
+      <view class="num 衣">{{totals.衣}}</view>
+    </view>
+    <view class="stat">
+      <view class="name">食</view>
+      <view class="num 食">{{totals.食}}</view>
+    </view>
+    <view class="stat">
+      <view class="name">住</view>
+      <view class="num 住">{{totals.住}}</view>
+    </view>
+    <view class="stat">
+      <view class="name">行</view>
+      <view class="num 行">{{totals.行}}</view>
+    </view>
+    <view class="stat wide">
+      <view class="name">其他</view>
+      <view class="num 其他">{{totals.其他}}</view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view wx:if="{{records.length === 0}}" class="empty">还没有记录</view>
+    <view wx:else>
+      <view class="row" wx:for="{{records}}" wx:key="index">
+        <view class="row-left">
+          <text class="tag {{item.分类结果}}">{{item.分类结果}}</text>
+          <text>{{item.备注}}</text>
+        </view>
+        <text class="meta">{{item.金额显示}}</text>
+      </view>
+    </view>
+  </view>
+</view>

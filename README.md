@@ -18,10 +18,11 @@
 | --- | --- |
 | [wechat-checkin](wechat-checkin) | 暑假学校微信小程序签到打卡（AutoJs6，真实定位） |
 
-## Python 练手
+## 练手
 
 | 目录 | 项目 | 技术 |
 | --- | --- | --- |
+| [practice/expense-book](practice/expense-book) | 衣食住行记账 | 微信小程序 / 手机网页 |
 | [practice/login-register-flow](practice/login-register-flow) | 注册登录（锁定 / 记住我） | Tkinter, MySQL, Redis, bcrypt |
 | [practice/contact-manager-mysql](practice/contact-manager-mysql) | 通讯录 | Tkinter, MySQL |
 | [practice/contact-manager-redis-cache](practice/contact-manager-redis-cache) | 通讯录 + Redis 缓存 | Tkinter, MySQL, Redis |
