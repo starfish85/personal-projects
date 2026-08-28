@@ -1,38 +1,46 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
-    />
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta name="theme-color" content="#161310" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="日课" />
-    <title>日课 · 练习吉他</title>
-    <script>
-      (function () {
-        if (location.hostname !== 'starfish85.github.io') return
-        var want = '/personal-projects/rike/'
-        if (location.pathname === '/personal-projects/rike') {
-          location.replace(want + location.search + location.hash)
-        }
-      })()
-    </script>
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/lxgwwenkaiscreen.css"
-    />
-    <script type="module" crossorigin src="/personal-projects/rike/assets/index-y3D-t80T.js?v=1787888502915"></script>
-    <link rel="stylesheet" crossorigin href="/personal-projects/rike/assets/index-B4USmL35.css?v=1787888502915">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>日课</title>
+    <link rel="canonical" href="https://daoke.pages.dev/" />
+    <meta http-equiv="refresh" content="0; url=https://daoke.pages.dev/" />
   </head>
   <body>
-    <div id="app"></div>
+    <p><a href="https://daoke.pages.dev/">打开日课</a></p>
+    <script>
+      (function () {
+        var to = "https://daoke.pages.dev/" + location.search + location.hash
+        var go = function () {
+          location.replace(to)
+        }
+        var tasks = []
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          tasks.push(
+            navigator.serviceWorker.getRegistrations().then(function (rs) {
+              return Promise.all(
+                rs.map(function (r) {
+                  return r.unregister()
+                }),
+              )
+            }),
+          )
+        }
+        if (window.caches && caches.keys) {
+          tasks.push(
+            caches.keys().then(function (keys) {
+              return Promise.all(
+                keys.map(function (k) {
+                  return caches.delete(k)
+                }),
+              )
+            }),
+          )
+        }
+        Promise.all(tasks).then(go, go)
+        setTimeout(go, 1200)
+      })()
+    </script>
   </body>
 </html>
