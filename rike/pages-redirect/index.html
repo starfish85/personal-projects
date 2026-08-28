@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>日课</title>
+    <link rel="canonical" href="https://daoke.pages.dev/" />
+    <meta http-equiv="refresh" content="0; url=https://daoke.pages.dev/" />
+  </head>
+  <body>
+    <p><a href="https://daoke.pages.dev/">打开日课</a></p>
+    <script>
+      (function () {
+        var to = "https://daoke.pages.dev/" + location.search + location.hash
+        var go = function () {
+          location.replace(to)
+        }
+        var tasks = []
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          tasks.push(
+            navigator.serviceWorker.getRegistrations().then(function (rs) {
+              return Promise.all(
+                rs.map(function (r) {
+                  return r.unregister()
+                }),
+              )
+            }),
+          )
+        }
+        if (window.caches && caches.keys) {
+          tasks.push(
+            caches.keys().then(function (keys) {
+              return Promise.all(
+                keys.map(function (k) {
+                  return caches.delete(k)
+                }),
+              )
+            }),
+          )
+        }
+        Promise.all(tasks).then(go, go)
+        setTimeout(go, 1200)
+      })()
+    </script>
+  </body>
+</html>

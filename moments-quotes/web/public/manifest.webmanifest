@@ -1,10 +1,10 @@
 {
-  "id": "/personal-projects/pianyu",
+  "id": "/",
   "name": "片语",
   "short_name": "片语",
   "description": "随手记下句子，发圈时按图片匹配文案。",
-  "start_url": "/personal-projects/pianyu/",
-  "scope": "/personal-projects/pianyu/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",

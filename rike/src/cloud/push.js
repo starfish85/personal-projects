@@ -19,10 +19,18 @@ function swScope() {
 
 async function dropStolenScopes() {
   const origin = window.location.origin
-  const stolen = new Set([`${origin}/`, `${origin}/personal-projects/`])
+  const mine = swScope().endsWith('/') ? swScope() : `${swScope()}/`
   try {
     const regs = await navigator.serviceWorker.getRegistrations()
-    await Promise.all(regs.filter((reg) => stolen.has(reg.scope)).map((reg) => reg.unregister()))
+    await Promise.all(
+      regs
+        .filter((reg) => {
+          const scope = reg.scope.endsWith('/') ? reg.scope : `${reg.scope}/`
+          if (scope === mine) return false
+          return scope === `${origin}/` || scope.startsWith(`${origin}/personal-projects/`)
+        })
+        .map((reg) => reg.unregister()),
+    )
   } catch {
     /* ignore */
   }

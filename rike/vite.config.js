@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
 export default defineConfig({
-  // 发布到 GitHub Pages 时用绝对子路径，避免 PWA 和片语抢同一个站点身份
+  // 正式站在 daoke.pages.dev 根路径；GITHUB_PAGES 仅留给旧的子路径调试
   base: process.env.GITHUB_PAGES === 'true' ? '/personal-projects/rike/' : './',
   plugins: [
     vue(),

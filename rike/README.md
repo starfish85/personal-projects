@@ -33,13 +33,13 @@ npm run dev
 
 ## 固定网址（扫码即用）
 
-线上地址：https://starfish85.github.io/personal-projects/rike/
+线上地址：https://daoke.pages.dev/
 
 ![扫码打开日课](public/qr.png)
 
 源码：https://github.com/starfish85/personal-projects/tree/main/rike
 
-更新网页后在 `rike` 目录运行 `./scripts/publish-pages.sh` 会重新发布。脚本只更新 `gh-pages` 上的 `/rike/`，不会冲掉大夫山导览。
+更新网页后在 `rike` 目录运行 `./scripts/publish-pages.sh`：发到 `daoke.pages.dev`，并把旧的 GitHub Pages 地址跳过去。不会冲掉大夫山导览。
 
 ## 文档（企业流程）
 
@@ -62,7 +62,7 @@ npm run dev
 
 装好后图标是曲谱，全屏打开，没有浏览器地址栏。第一次打开需要网络，之后没网也能进已经缓存过的页面。曲谱图片和云同步仍要联网。
 
-片语和日课在同一个 GitHub Pages 域名下。若手机上点日课却打开片语：先从主屏幕删掉两个图标，Chrome 里清除 `starfish85.github.io` 的网站数据，再用上面带斜杠的地址重新加到主屏幕。不要用微信内置浏览器安装。
+片语在 `https://pianyu.pages.dev/`，日课在 `https://daoke.pages.dev/`，两个域名互不抢窗口。从主屏幕打开过旧的 github.io 图标的，删掉后用上面的新地址重新加到主屏幕。不要用微信内置浏览器安装。
 
 ## 已知限制
 

@@ -9,8 +9,8 @@
 | 目录 | 说明 | 演示 |
 | --- | --- | --- |
 | [dafushan-guide](dafushan-guide) | 广州番禺大夫山森林公园适老化智能导览 | https://starfish85.github.io/personal-projects/dafushan-guide/ |
-| [rike](rike) | 日课：练吉他计数、全屏曲谱、乐理笔记（可加到主屏幕） | https://starfish85.github.io/personal-projects/rike/ |
-| [moments-quotes](moments-quotes) | 片语：记下金句，发圈时按图配文（可加到主屏幕） | https://starfish85.github.io/personal-projects/pianyu/ |
+| [rike](rike) | 日课：练吉他计数、全屏曲谱、乐理笔记（可加到主屏幕） | https://daoke.pages.dev/ |
+| [moments-quotes](moments-quotes) | 片语：记下金句，发圈时按图配文（可加到主屏幕） | https://pianyu.pages.dev/ |
 
 ## 其他
 
@@ -49,4 +49,4 @@ personal-projects/
 1. 练手项目放到 `practice/`，产品放到仓库根目录的独立文件夹。
 2. 项目自己的 README 写清楚怎么运行。
 3. 回到根目录 README，把新项目加进对应表格。
-4. 需要单独演示网址时，在对应项目里发布到本仓库的 `gh-pages`。大夫山演示：https://starfish85.github.io/personal-projects/dafushan-guide/ ；日课：https://starfish85.github.io/personal-projects/rike/
+4. 需要单独演示网址时：大夫山仍发本仓库 `gh-pages`（https://starfish85.github.io/personal-projects/dafushan-guide/ ）；日课发 Cloudflare Pages（https://daoke.pages.dev/ ）；片语发 Cloudflare Pages（https://pianyu.pages.dev/ ）。

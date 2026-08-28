@@ -34,12 +34,12 @@ npm run dev:server
 npm run dev:web
 ```
 
-扫码 / 手机打开：https://starfish85.github.io/personal-projects/pianyu/  
+扫码 / 手机打开：https://pianyu.pages.dev/  
 二维码：`docs/qr-pianyu.png`
 
 已做成 PWA。用 Safari / Chrome 打开上面的地址（不要用微信内置浏览器）：iPhone 点分享 → **添加到主屏幕**；Android Chrome 菜单 → **安装应用**。金句在本机，装好后没网也能记和翻；「按图配文」看图仍要本机服务。
 
-若手机上已经开着片语，再点日课却仍打开片语：从主屏幕删掉两个图标，Chrome 里清除 `starfish85.github.io` 的网站数据，再用带最后斜杠的地址分别重新安装。
+日课在 `https://daoke.pages.dev/`。两个站不在同一个域名，主屏幕和微信里不会再抢窗口。若还留着旧的 github.io 图标，删掉后用新地址重新加到主屏幕。
 
 开发时打开 http://127.0.0.1:5173 。本机带接口：`npm start` 后打开 http://127.0.0.1:8787 。GitHub 静态站没有密钥，分类在页面内完成；真看图仍用本机服务。
 
