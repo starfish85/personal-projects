@@ -1,10 +1,10 @@
 {
-  "id": "./",
+  "id": "/personal-projects/rike",
   "name": "日课 · 练习吉他",
   "short_name": "日课",
   "description": "对着曲谱练吉他：计数、全屏看谱、乐理笔记。",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/personal-projects/rike/",
+  "scope": "/personal-projects/rike/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",

@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "Building site for GitHub Pages..."
-npm run build
+GITHUB_PAGES=true npm run build
 touch dist/.nojekyll
 
 WORKDIR="$(mktemp -d)"

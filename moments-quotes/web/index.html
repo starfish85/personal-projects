@@ -12,6 +12,15 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="片语" />
+    <script>
+      (function () {
+        if (location.hostname !== "starfish85.github.io") return;
+        var want = "/personal-projects/pianyu/";
+        if (location.pathname === "/personal-projects/pianyu") {
+          location.replace(want + location.search + location.hash);
+        }
+      })();
+    </script>
     <style>
       html, body, #app {
         margin: 0;

@@ -1,18 +1,38 @@
 import { getClient, getCloudConfig } from './client'
 import { toast } from '../stores/ui'
 
+function appRootUrl() {
+  const base = import.meta.env.BASE_URL || './'
+  if (base.startsWith('/')) return new URL(base, window.location.origin)
+  const path = window.location.pathname
+  const dir = path.endsWith('/') ? path : path.replace(/\/[^/]+$/, '/')
+  return new URL(dir, window.location.origin)
+}
+
 function swUrl() {
-  return new URL('sw.js', window.location.href).href
+  return new URL('sw.js', appRootUrl()).href
 }
 
 function swScope() {
-  return new URL('./', window.location.href).href
+  return appRootUrl().href
+}
+
+async function dropStolenScopes() {
+  const origin = window.location.origin
+  const stolen = new Set([`${origin}/`, `${origin}/personal-projects/`])
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(regs.filter((reg) => stolen.has(reg.scope)).map((reg) => reg.unregister()))
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function registerShellWorker() {
   if (!('serviceWorker' in navigator)) return null
   if (import.meta.env.DEV) return null
   try {
+    await dropStolenScopes()
     return await navigator.serviceWorker.register(swUrl(), { scope: swScope() })
   } catch {
     return null

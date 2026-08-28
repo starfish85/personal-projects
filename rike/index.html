@@ -16,6 +16,15 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="日课" />
     <title>日课 · 练习吉他</title>
+    <script>
+      (function () {
+        if (location.hostname !== 'starfish85.github.io') return
+        var want = '/personal-projects/rike/'
+        if (location.pathname === '/personal-projects/rike') {
+          location.replace(want + location.search + location.hash)
+        }
+      })()
+    </script>
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-screen-webfont@1.7.0/lxgwwenkaiscreen.css"
