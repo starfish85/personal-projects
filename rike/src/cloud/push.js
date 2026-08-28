@@ -11,6 +11,7 @@ function swScope() {
 
 export async function registerShellWorker() {
   if (!('serviceWorker' in navigator)) return null
+  if (import.meta.env.DEV) return null
   try {
     return await navigator.serviceWorker.register(swUrl(), { scope: swScope() })
   } catch {

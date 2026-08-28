@@ -64,7 +64,7 @@ function fire(task) {
     const note = new Notification(task.title, {
       body: '日课',
       tag: `rike-${task.id}`,
-      icon: './favicon.svg',
+      icon: './icons/icon-192.png',
     })
     note.onclick = () => {
       window.focus()

@@ -9,8 +9,8 @@
 | 目录 | 说明 | 演示 |
 | --- | --- | --- |
 | [dafushan-guide](dafushan-guide) | 广州番禺大夫山森林公园适老化智能导览 | https://starfish85.github.io/personal-projects/dafushan-guide/ |
-| [rike](rike) | 日课：练吉他计数、全屏曲谱、乐理笔记 | https://starfish85.github.io/personal-projects/rike/ |
-| [moments-quotes](moments-quotes) | 片语：记下金句，发圈时按图配文 | https://starfish85.github.io/personal-projects/pianyu/ |
+| [rike](rike) | 日课：练吉他计数、全屏曲谱、乐理笔记（可加到主屏幕） | https://starfish85.github.io/personal-projects/rike/ |
+| [moments-quotes](moments-quotes) | 片语：记下金句，发圈时按图配文（可加到主屏幕） | https://starfish85.github.io/personal-projects/pianyu/ |
 
 ## 其他
 

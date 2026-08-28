@@ -1,4 +1,4 @@
-const CACHE = 'rike-pwa-1'
+const CACHE = 'pianyu-pwa-1'
 
 const PRECACHE = [
   './',
@@ -11,13 +11,9 @@ const PRECACHE = [
   './icons/apple-touch-icon.png',
 ]
 
-function sameOrigin(url) {
-  return url.origin === self.location.origin
-}
-
 function shouldBypass(url) {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return true
-  if (url.pathname.includes('/supabase/') || url.hostname.includes('supabase.co')) return true
+  if (url.pathname.startsWith('/api/')) return true
   return false
 }
 
@@ -45,6 +41,7 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return
   const url = new URL(req.url)
   if (shouldBypass(url)) return
+  if (url.origin !== self.location.origin) return
 
   if (req.mode === 'navigate') {
     event.respondWith(
@@ -59,8 +56,6 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  if (!sameOrigin(url) && url.hostname !== 'cdn.jsdelivr.net') return
-
   event.respondWith(
     caches.match(req).then((cached) => {
       const fetched = fetch(req)
@@ -73,44 +68,6 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => cached)
       return cached || fetched
-    }),
-  )
-})
-
-self.addEventListener('push', (event) => {
-  let data = { title: '日课', body: '到点了', url: './' }
-  try {
-    if (event.data) data = { ...data, ...event.data.json() }
-  } catch {
-    try {
-      data.body = event.data.text()
-    } catch {
-      /* empty push */
-    }
-  }
-  event.waitUntil(
-    self.registration.showNotification(data.title || '日课', {
-      body: data.body || '到点了',
-      tag: data.tag || 'rike',
-      icon: './icons/icon-192.png',
-      data: { url: data.url || './' },
-    }),
-  )
-})
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close()
-  const url = event.notification.data?.url || './'
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windows) => {
-      for (const client of windows) {
-        if ('focus' in client) {
-          client.focus()
-          if (url && 'navigate' in client) client.navigate(url)
-          return
-        }
-      }
-      return self.clients.openWindow(url)
     }),
   )
 })
