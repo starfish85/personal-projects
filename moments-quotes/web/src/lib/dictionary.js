@@ -21,6 +21,31 @@ function saveDict(dict) {
   localStorage.setItem(KEY, JSON.stringify(dict));
 }
 
+function mergeBag(target, source) {
+  if (!source || typeof source !== "object") return;
+  for (const [word, weight] of Object.entries(source)) {
+    const n = Number(weight);
+    if (!word || !Number.isFinite(n) || n === 0) continue;
+    bump(target, word, n);
+  }
+}
+
+export function mergeDict(incoming) {
+  if (!incoming || typeof incoming !== "object") return;
+  const dict = loadDict();
+  for (const [label, bag] of Object.entries(incoming.scenes || {})) {
+    if (!label) continue;
+    dict.scenes[label] ||= {};
+    mergeBag(dict.scenes[label], bag);
+  }
+  for (const [label, bag] of Object.entries(incoming.moods || {})) {
+    if (!label) continue;
+    dict.moods[label] ||= {};
+    mergeBag(dict.moods[label], bag);
+  }
+  saveDict(dict);
+}
+
 export function extractKeywords(text) {
   const t = String(text || "").replace(/\s+/g, "");
   const found = [];

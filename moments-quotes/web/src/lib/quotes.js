@@ -36,6 +36,27 @@ export function listQuotes() {
   return loadStore().quotes.slice().sort((a, b) => b.createdAt - a.createdAt);
 }
 
+function newQuoteId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function asQuote(raw, id) {
+  const now = Date.now();
+  const scenes = Array.isArray(raw?.scenes) ? raw.scenes.filter((s) => typeof s === "string" && s) : [];
+  return {
+    id,
+    text: normalizeText(raw?.text),
+    scenes: scenes.length ? scenes : ["其他"],
+    mood: typeof raw?.mood === "string" && raw.mood ? raw.mood : "其他",
+    sceneUserSet: Boolean(raw?.sceneUserSet),
+    moodUserSet: Boolean(raw?.moodUserSet),
+    createdAt: Number(raw?.createdAt) || now,
+    updatedAt: Number(raw?.updatedAt) || now,
+    useCount: Number(raw?.useCount) || 0,
+    lastUsedAt: raw?.lastUsedAt ?? null,
+  };
+}
+
 export function addQuote(text) {
   const normalized = normalizeText(text);
   if (!normalized) return { ok: false, error: "empty" };
@@ -45,21 +66,50 @@ export function addQuote(text) {
     return { ok: false, error: "duplicate" };
   }
   const now = Date.now();
-  const quote = {
-    id: `${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    text: normalized,
-    scenes: ["其他"],
-    mood: "其他",
-    sceneUserSet: false,
-    moodUserSet: false,
-    createdAt: now,
-    updatedAt: now,
-    useCount: 0,
-    lastUsedAt: null,
-  };
+  const quote = asQuote(
+    {
+      text: normalized,
+      scenes: ["其他"],
+      mood: "其他",
+      createdAt: now,
+      updatedAt: now,
+      useCount: 0,
+      lastUsedAt: null,
+    },
+    newQuoteId(),
+  );
   store.quotes.unshift(quote);
   writeStore(store);
   return { ok: true, quote };
+}
+
+export function appendQuotes(incoming) {
+  const list = Array.isArray(incoming) ? incoming : [];
+  const store = loadStore();
+  const texts = new Set(store.quotes.map((q) => normalizeText(q.text)));
+  const ids = new Set(store.quotes.map((q) => q.id));
+  let added = 0;
+  let skipped = 0;
+  for (const raw of list) {
+    const text = normalizeText(raw?.text);
+    if (!text || charLen(text) > 500) {
+      skipped += 1;
+      continue;
+    }
+    if (texts.has(text)) {
+      skipped += 1;
+      continue;
+    }
+    let id = String(raw?.id || "").trim() || newQuoteId();
+    if (ids.has(id)) id = newQuoteId();
+    const quote = asQuote({ ...raw, text }, id);
+    store.quotes.push(quote);
+    texts.add(text);
+    ids.add(id);
+    added += 1;
+  }
+  if (added) writeStore(store);
+  return { added, skipped };
 }
 
 export function updateQuote(id, patch) {

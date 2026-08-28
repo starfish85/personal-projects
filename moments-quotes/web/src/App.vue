@@ -12,6 +12,7 @@ import { classifyText, lookImage } from "./lib/api.js";
 import { prepareImage } from "./lib/image.js";
 import { matchQuotes } from "./lib/matchQuotes.js";
 import { classifyFromDictionary, learnFromCorrection } from "./lib/dictionary.js";
+import { applyBackup, downloadBackup, exportBackup, parseBackup } from "./lib/backup.js";
 
 const page = ref("home");
 const homePane = ref("cover");
@@ -30,6 +31,10 @@ const suggestions = ref({});
 
 const editing = ref(null);
 const confirmDel = ref(false);
+const sunOn = ref(false);
+const confirmImport = ref(null);
+const importRef = ref(null);
+const importBusy = ref(false);
 
 const match = ref({
   fileName: "",
@@ -55,13 +60,13 @@ function refresh() {
   quotes.value = listQuotes();
 }
 
-function toast(msg) {
+function toast(msg, ms = 2000) {
   toastMsg.value = msg;
   toastOn.value = true;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     toastOn.value = false;
-  }, 2000);
+  }, ms);
 }
 
 function setHome(pane) {
@@ -328,11 +333,71 @@ async function onPickFile(ev) {
   }
 }
 
-onMounted(refresh);
+async function exportNow() {
+  try {
+    const data = exportBackup();
+    const res = await downloadBackup(data);
+    if (res.error === "abort") return;
+    if (!res.ok || res.wechat) {
+      toast(res.ok ? "如果没看到文件，用 Safari 打开再导出" : "用 Safari 打开片语再导出");
+      return;
+    }
+    toast("已导出");
+  } catch {
+    toast("这次没导出成，再试一次");
+  }
+}
+
+function pickImport() {
+  importRef.value?.click();
+}
+
+async function onImportFile(ev) {
+  const file = ev.target.files?.[0];
+  ev.target.value = "";
+  if (!file) return;
+  try {
+    const parsed = parseBackup(await file.text());
+    if (!parsed.ok) {
+      toast("这不是片语的备份");
+      return;
+    }
+    confirmImport.value = parsed;
+  } catch {
+    toast("这不是片语的备份");
+  }
+}
+
+function doImport() {
+  if (!confirmImport.value || importBusy.value) return;
+  importBusy.value = true;
+  try {
+    const { added, skipped } = applyBackup(confirmImport.value);
+    confirmImport.value = null;
+    refresh();
+    if (added && skipped) toast(`加进了 ${added} 句，${skipped} 句库里已有，已跳过。`, 2800);
+    else if (added) toast(`加进了 ${added} 句`);
+    else if (skipped) toast("这些句子库里都有，已跳过");
+    else toast("备份里没有句子");
+  } catch {
+    toast("这次没导入成，再试一次");
+  } finally {
+    importBusy.value = false;
+  }
+}
+
+onMounted(() => {
+  refresh();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      sunOn.value = true;
+    });
+  });
+});
 </script>
 
 <template>
-  <div class="app" :class="page === 'home' ? 'is-' + homePane : ''">
+  <div class="app" :class="[page === 'home' ? 'is-' + homePane : '', { 'sun-on': sunOn }]">
     <header v-if="page === 'match'" class="topbar">
       <button class="back" type="button" @click="goHome">← 返回</button>
       <h1>按图配文</h1>
@@ -350,13 +415,12 @@ onMounted(refresh);
         @touchend="onCoverUp"
         @wheel.passive="onCoverWheel"
       >
-        <div class="sun-field" aria-hidden="true">
-          <span class="sun-ray"></span>
-          <span class="sun-ray r2"></span>
-          <span class="sun-ray r3"></span>
-          <span class="sun-ray r4"></span>
+        <div class="sun-field" aria-hidden="true"></div>
+        <div class="sun-wrap">
+          <span class="sun-ray" aria-hidden="true"></span>
+          <span class="sun-ray r2" aria-hidden="true"></span>
+          <button class="sun" type="button" aria-label="记下一句" @click="onSunClick"></button>
         </div>
-        <button class="sun" type="button" aria-label="记下一句" @click="onSunClick"></button>
         <button class="cover-match" type="button" @click="goMatch">按图配文</button>
         <button class="cover-open-list" type="button" aria-label="查看句子" @click="setHome('list')">
           <span class="chev"></span>
@@ -381,7 +445,13 @@ onMounted(refresh);
         @touchstart.passive="onListDown"
         @touchend="onListUp"
       >
-        <div class="list-handle" @click="setHome('cover')">下滑回到太阳</div>
+        <div class="list-handle">
+          <button class="list-back" type="button" @click="setHome('cover')">下滑回到太阳</button>
+          <div class="list-backup">
+            <button type="button" @pointerdown.stop @click.stop="exportNow">导出</button>
+            <button type="button" @pointerdown.stop @click.stop="pickImport">导入</button>
+          </div>
+        </div>
         <div v-if="quotes.length" class="filters">
           <select v-model="filterScene">
             <option value="全部">场景 全部</option>
@@ -477,8 +547,25 @@ onMounted(refresh);
       </div>
     </section>
 
-    <button v-if="page === 'home' && !editing" class="fab" type="button" @click="goMatch">按图配文</button>
+    <button v-if="page === 'home' && !editing && !confirmImport" class="fab" type="button" @click="goMatch">按图配文</button>
     <div class="toast" :class="{ show: toastOn }">{{ toastMsg }}</div>
+    <input ref="importRef" type="file" accept="application/json,.json" hidden @change="onImportFile" />
+
+    <div
+      v-if="confirmImport"
+      class="overlay"
+      @pointerdown.stop
+      @pointerup.stop
+      @click.self="confirmImport = null"
+    >
+      <div class="confirm">
+        <p>把备份里的句子加进现在的库。正文相同的会跳过。</p>
+        <div class="row">
+          <button class="btn btn-text" type="button" @click="confirmImport = null">取消</button>
+          <button class="btn btn-primary" type="button" :disabled="importBusy" @click="doImport">导入</button>
+        </div>
+      </div>
+    </div>
 
     <div
       v-if="editing"
