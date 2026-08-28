@@ -125,6 +125,16 @@ async function onImport(event) {
       <i :class="{ on: open }" />
     </button>
 
+    <div class="actions backup">
+      <button class="btn btn-ghost" type="button" :disabled="backupBusy" @click="doExport">
+        {{ backupBusy ? '处理中' : '导出备份' }}
+      </button>
+      <button class="btn btn-ghost" type="button" :disabled="backupBusy" @click="askImport">
+        导入备份
+      </button>
+    </div>
+    <input ref="importRef" class="hidden" type="file" accept="application/json" @change="onImport" />
+
     <div v-if="open" class="panel">
       <template v-if="!configured">
         <input v-model="form.url" class="field slim" type="url" placeholder="Supabase 项目 URL" />
@@ -172,15 +182,6 @@ async function onImport(event) {
         登录后曲谱、打卡图、日记图会传到云端，换手机登录再同步即可。两台手机同一天都加遍数时取较大值，不会相加。
         到点提醒：加到主屏幕后点上面的按钮；微信里网页推送一般不可用，页面开着时仍会响。
       </p>
-      <div class="actions backup">
-        <button class="btn btn-ghost" type="button" :disabled="backupBusy" @click="doExport">
-          {{ backupBusy ? '处理中' : '导出备份' }}
-        </button>
-        <button class="btn btn-ghost" type="button" :disabled="backupBusy" @click="askImport">
-          导入备份
-        </button>
-      </div>
-      <input ref="importRef" class="hidden" type="file" accept="application/json" @change="onImport" />
     </div>
   </section>
 </template>
@@ -188,6 +189,7 @@ async function onImport(event) {
 <style scoped>
 .sync {
   margin-top: 12px;
+  padding-bottom: calc(var(--fab) + 12px);
 }
 
 .summary {
@@ -257,6 +259,7 @@ async function onImport(event) {
 
 .actions.backup {
   grid-template-columns: 1fr 1fr;
+  margin-top: 8px;
 }
 
 .push-btn {

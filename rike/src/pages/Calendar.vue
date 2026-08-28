@@ -11,9 +11,11 @@ import {
   hasJournal,
   journalPhotosOn,
   listDays,
+  listTaskNoteEntries,
   loadCheckins,
   loadJournals,
   practice,
+  reviewableNoteTasks,
   removeAsset,
   removeCheckin,
   removeJournalPhoto,
@@ -27,7 +29,7 @@ import {
   toggleSubtask,
   unskipTaskOnDate,
 } from '../stores/practice'
-import { confirmDialog } from '../stores/ui'
+import { clearToast, confirmDialog } from '../stores/ui'
 import {
   dateMode,
   formatClock,
@@ -211,6 +213,7 @@ const armed = ref(false)
 
 function pick(dateKey) {
   if (!dateKey) return
+  clearToast()
   const nextMode = dateMode(dateKey, today.value)
   if (dateKey === selected.value && armed.value) {
     if (nextMode === 'future') addTaskForSelected()
@@ -236,6 +239,8 @@ function openGallery(taskId) {
 
 function openTask(taskId) {
   if (!isToday.value) return
+  const task = practice.tasks.find((item) => item.id === taskId)
+  if (task && skipped(task)) return
   router.push(`/task/${taskId}`)
 }
 
@@ -243,8 +248,46 @@ function editTask(taskId) {
   router.push({ path: '/', query: { edit: taskId, date: selected.value, from: 'calendar' } })
 }
 
+const reviewOpen = ref(false)
+const reviewFilter = ref('')
+const reviewDetail = ref(null)
+
+function canReviewNotes(task) {
+  return reviewableNoteTasks().some((item) => item.id === task.id)
+}
+
+function openReview(taskId) {
+  reviewFilter.value = taskId || ''
+  reviewDetail.value = null
+  reviewOpen.value = true
+}
+
+function closeReview() {
+  reviewOpen.value = false
+  reviewDetail.value = null
+}
+
+const reviewTasks = computed(() => reviewableNoteTasks())
+const reviewChips = computed(() => reviewTasks.value.length > 1 || Boolean(reviewFilter.value))
+const reviewEntries = computed(() => {
+  const allowed = new Set(reviewTasks.value.map((task) => task.id))
+  const rows = listTaskNoteEntries(reviewFilter.value ? { taskId: reviewFilter.value } : {})
+  return rows.filter((row) => allowed.has(row.taskId))
+})
+
+function reviewTaskTitle(taskId) {
+  return practice.tasks.find((item) => item.id === taskId)?.title || '任务'
+}
+
+function notePreview(text) {
+  const line = String(text || '').trim().split('\n')[0] || ''
+  return line.length > 42 ? `${line.slice(0, 42)}…` : line
+}
+
 function pickPhoto(taskId) {
   if (!canCompleteTasks.value) return
+  const task = practice.tasks.find((item) => item.id === taskId)
+  if (task && skipped(task)) return
   uploadTaskId.value = taskId
   fileRef.value?.click()
 }
@@ -296,13 +339,13 @@ async function onDelete(id) {
 }
 
 async function toggleSubOnDate(task, subtask) {
-  if (!canCompleteTasks.value) return
+  if (!canCompleteTasks.value || skipped(task)) return
   await toggleSubtask(task.id, subtask.id, selected.value)
   await refresh()
 }
 
 async function toggleCheckForSelected(task) {
-  if (!canCompleteTasks.value) return
+  if (!canCompleteTasks.value || skipped(task)) return
   await toggleCheckOnDate(task.id, selected.value)
   await refresh()
 }
@@ -331,11 +374,11 @@ watch(
 </script>
 
 <template>
-  <main class="page">
+  <main class="page" :class="{ locked: reviewOpen }">
     <header class="head">
       <p class="brand">日课</p>
       <h1>日历</h1>
-      <span />
+      <button type="button" class="review-btn" @click="openReview('')">回溯</button>
     </header>
 
     <section class="cal">
@@ -407,7 +450,7 @@ watch(
           </div>
 
           <div v-if="task.subtasks?.length" class="subtasks">
-            <template v-if="isToday">
+            <template v-if="isToday && !skipped(task)">
               <button
                 v-for="subtask in task.subtasks"
                 :key="subtask.id"
@@ -461,7 +504,7 @@ watch(
           </template>
 
           <button
-            v-if="isToday && task.completion === 'check' && !task.subtasks?.length"
+            v-if="isToday && !skipped(task) && task.completion === 'check' && !task.subtasks?.length"
             class="day-check"
             type="button"
             :class="{ on: status(selected, task) }"
@@ -471,10 +514,10 @@ watch(
             <i />
           </button>
 
-          <div v-if="isToday || isFuture || taskHasGallery(task)" class="task-actions">
-            <button v-if="isToday" type="button" class="open" @click="openTask(task.id)">打开任务</button>
+          <div v-if="isToday || isFuture || taskHasGallery(task) || canReviewNotes(task)" class="task-actions">
+            <button v-if="isToday && !skipped(task)" type="button" class="open" @click="openTask(task.id)">打开任务</button>
             <button
-              v-if="isToday && task.completion === 'photo-log'"
+              v-if="isToday && !skipped(task) && task.completion === 'photo-log'"
               type="button"
               class="open"
               @click="pickPhoto(task.id)"
@@ -492,6 +535,9 @@ watch(
             </button>
             <button v-if="taskHasGallery(task)" type="button" class="open" @click="openGallery(task.id)">
               查看作品墙
+            </button>
+            <button v-if="canReviewNotes(task)" type="button" class="open" @click="openReview(task.id)">
+              批注回顾
             </button>
           </div>
         </div>
@@ -526,6 +572,49 @@ watch(
       @close="viewerOpen = false"
       @delete="onDelete"
     />
+
+    <div v-if="reviewOpen" class="modal-mask" @click.self="closeReview">
+      <div class="modal-sheet review-sheet">
+        <template v-if="!reviewDetail">
+          <h2 class="modal-title">批注回顾</h2>
+          <div v-if="reviewChips" class="review-chips">
+            <button type="button" :class="{ on: !reviewFilter }" @click="reviewFilter = ''">全部</button>
+            <button
+              v-for="task in reviewTasks"
+              :key="task.id"
+              type="button"
+              :class="{ on: reviewFilter === task.id }"
+              @click="reviewFilter = task.id"
+            >
+              {{ task.title }}
+            </button>
+          </div>
+          <p v-if="!reviewEntries.length" class="modal-copy">还没有批注可以回顾</p>
+          <button
+            v-for="entry in reviewEntries"
+            :key="`${entry.taskId}-${entry.date}`"
+            type="button"
+            class="review-row"
+            @click="reviewDetail = entry"
+          >
+            <strong>{{ formatDayTitle(entry.date) }}</strong>
+            <em>{{ reviewTaskTitle(entry.taskId) }}</em>
+            <span>{{ notePreview(entry.text) }}</span>
+          </button>
+        </template>
+        <template v-else>
+          <h2 class="modal-title">{{ formatDayTitle(reviewDetail.date) }}</h2>
+          <p class="modal-copy">{{ reviewTaskTitle(reviewDetail.taskId) }}</p>
+          <pre class="review-body">{{ reviewDetail.text }}</pre>
+          <div class="modal-actions">
+            <button class="btn btn-ghost" type="button" @click="reviewDetail = null">返回列表</button>
+          </div>
+        </template>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" @click="closeReview">关闭</button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -537,6 +626,18 @@ watch(
   padding: calc(12px + var(--safe-top)) 16px calc(var(--tab-h) + 16px);
   max-width: var(--page-max);
   margin: 0 auto;
+}
+
+.page.locked {
+  overflow: hidden;
+}
+
+.review-btn {
+  justify-self: end;
+  min-height: 44px;
+  padding: 0 4px;
+  color: var(--amber);
+  font-weight: 650;
 }
 
 .head {
@@ -927,5 +1028,73 @@ div.subtask {
 
 .hidden {
   display: none;
+}
+
+.page :deep(.modal-mask) {
+  z-index: 80;
+}
+
+.review-sheet {
+  max-height: min(86dvh, 720px);
+}
+
+.review-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.review-chips button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.review-chips button.on {
+  background: var(--amber);
+  color: var(--ink);
+}
+
+.review-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--bg-soft);
+  text-align: left;
+  color: var(--text);
+}
+
+.review-row strong,
+.review-row em,
+.review-row span {
+  display: block;
+}
+
+.review-row em {
+  color: var(--muted);
+  font-style: normal;
+  font-size: var(--fs-sm);
+}
+
+.review-row span {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+
+.review-body {
+  margin: 0 0 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  color: var(--text);
+  line-height: 1.55;
 }
 </style>

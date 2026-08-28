@@ -8,6 +8,7 @@ import {
   applyMergedTasks,
   normalizeTask,
   onLocalChange,
+  parseTaskNoteKey,
   practice,
   reloadAll,
 } from './practice'
@@ -120,12 +121,15 @@ async function mergeJournals(rows) {
 
 async function mergeTaskNotes(rows) {
   for (const row of rows || []) {
-    const taskId = row.task_id
-    const localAt = practice.taskNotesUpdatedAt[taskId] || ''
+    const parsed = parseTaskNoteKey(`taskNote.${row.task_id}`)
+    if (!parsed) continue
+    const key = parsed.date
+      ? `taskNote.${parsed.taskId}.${parsed.date}`
+      : `taskNote.${parsed.taskId}`
+    const local = await db.kvGet(key)
+    const localAt = local?.updatedAt || ''
     if (later(localAt, row.updated_at)) continue
-    practice.taskNotes[taskId] = row.text || ''
-    practice.taskNotesUpdatedAt[taskId] = row.updated_at
-    await db.kvSet(`taskNote.${taskId}`, { text: row.text || '', updatedAt: row.updated_at })
+    await db.kvSet(key, { text: row.text || '', updatedAt: row.updated_at })
   }
 }
 

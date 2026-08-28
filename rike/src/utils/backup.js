@@ -29,7 +29,7 @@ export async function exportBackup() {
   }
   return {
     app: 'rike',
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
     kv,
     assets: packedAssets,

@@ -34,12 +34,13 @@ import MonthCal from '../components/MonthCal.vue'
 import SyncBar from '../components/SyncBar.vue'
 import TimePicker from '../components/TimePicker.vue'
 import { cloud } from '../stores/sync'
-import { confirmDialog, toast } from '../stores/ui'
+import { clearToast, confirmDialog, toast } from '../stores/ui'
 import {
   backupFileName,
   backupNagNeeded,
   dismissBackupNag,
   exportAndDownload,
+  importBackup,
 } from '../utils/backup'
 import {
   dateMode,
@@ -48,7 +49,6 @@ import {
   formatPracticeTime,
   localDateKey,
   shiftDateKey,
-  weekdayOf,
 } from '../utils/date'
 import { ensureNotifyPermission } from '../utils/remind'
 
@@ -67,6 +67,8 @@ const saving = ref(false)
 const fromCalendarDate = ref('')
 const fromHomeDate = ref('')
 const backupNag = ref(false)
+const backupBusy = ref(false)
+const importRef = ref(null)
 const pickerOpen = ref(false)
 const pickerDraft = ref('')
 const dueCalOpen = ref(false)
@@ -137,6 +139,8 @@ function applyTemplate(item) {
   }
   form.subtasks = []
   form.color = item.color || form.color
+  form.longTerm = Boolean(item.longTerm)
+  form.repeatWeekdays = []
   if (!form.title || TASK_TEMPLATES.some((t) => t.defaultTitle === form.title || t.title === form.title)) {
     form.title = item.defaultTitle || ''
   }
@@ -257,9 +261,6 @@ function toggleRepeat(day) {
 function setLongTerm(on) {
   const was = form.longTerm
   form.longTerm = on
-  if (on && !was && form.repeatWeekdays.length === 0) {
-    form.repeatWeekdays = [weekdayOf(form.dueDate)]
-  }
   if (!on && was) form.repeatWeekdays = []
 }
 
@@ -300,12 +301,43 @@ function refreshBackupNag() {
 }
 
 async function exportBackupNow() {
+  if (backupBusy.value) return
+  backupBusy.value = true
   try {
     const data = await exportAndDownload()
     toast(`已导出 ${backupFileName(data)}`)
     refreshBackupNag()
   } catch {
     toast('导出失败')
+  } finally {
+    backupBusy.value = false
+  }
+}
+
+async function askImport() {
+  if (backupBusy.value) return
+  const ok = await confirmDialog({
+    title: '导入备份？',
+    copy: '会覆盖本机现有的遍数、图片、标注和笔记。',
+    ok: '导入',
+    danger: true,
+  })
+  if (ok) importRef.value?.click()
+}
+
+async function onImport(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  backupBusy.value = true
+  try {
+    await importBackup(file)
+    toast('备份已导入')
+    refreshBackupNag()
+  } catch (error) {
+    toast(error.message || '导入失败')
+  } finally {
+    backupBusy.value = false
   }
 }
 
@@ -373,10 +405,7 @@ async function saveEditor() {
       const goCalendar = calendarDate || (!visibleToday ? task.dueDate : '')
       const message = goCalendar ? `已安排到 ${task.dueDate || form.dueDate}` : '任务已创建'
       await finishClose({ calendarDate: goCalendar || undefined })
-      if (!goCalendar) {
-        if (pageRef.value) pageRef.value.scrollTop = 0
-        if (task.subtasks?.length) expandedId.value = task.id
-      }
+      if (!goCalendar && pageRef.value) pageRef.value.scrollTop = 0
       toast(message)
       return
     }
@@ -503,6 +532,7 @@ function closePicker() {
 
 async function setViewingDate(dateKey) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return
+  clearToast()
   practice.viewingDate = dateKey
   pickerOpen.value = false
   closeSwipe()
@@ -769,7 +799,8 @@ async function toggleSub(task, subtask) {
     <article v-if="backupNag" class="backup-nag">
       <p>曲谱和打卡图还没备份，清微信缓存会丢。</p>
       <div>
-        <button type="button" @click="exportBackupNow">导出</button>
+        <button type="button" :disabled="backupBusy" @click="exportBackupNow">导出</button>
+        <button type="button" :disabled="backupBusy" @click="askImport">导入</button>
         <button type="button" class="later" @click="skipBackupNag">稍后</button>
       </div>
     </article>
@@ -1015,7 +1046,7 @@ async function toggleSub(task, subtask) {
                 {{ day.label }}
               </button>
             </div>
-            <em>{{ form.repeatWeekdays.length ? '按选中的周几出现' : '每天出现' }}</em>
+            <em>{{ form.repeatWeekdays.length ? '按选中的周几出现' : '不选则每天出现' }}</em>
           </div>
           <div class="component-block">
             <p>完成方式</p>
@@ -1125,6 +1156,7 @@ async function toggleSub(task, subtask) {
     </div>
 
     <TimePicker v-model="form.reminder" :open="timeOpen" @close="timeOpen = false" />
+    <input ref="importRef" class="hidden" type="file" accept="application/json" @change="onImport" />
   </main>
 </template>
 
@@ -1414,6 +1446,36 @@ async function toggleSub(task, subtask) {
   color: var(--paper);
   font-size: var(--fs-md);
   font-weight: 650;
+}
+
+.feature-swipe.open .feature-card em,
+.feature-swipe.open .feature-count,
+.feature-swipe.open .feature-line,
+.feature-swipe.open .feature-go,
+.feature-swipe.open .seal,
+.feature-swipe:has(.card.dragging) .feature-card em,
+.feature-swipe:has(.card.dragging) .feature-count,
+.feature-swipe:has(.card.dragging) .feature-line,
+.feature-swipe:has(.card.dragging) .feature-go,
+.feature-swipe:has(.card.dragging) .seal {
+  display: none;
+}
+
+.feature-swipe.open .feature-card,
+.feature-swipe:has(.card.dragging) .feature-card {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  padding: 16px 12px;
+}
+
+.feature-swipe.open .feature-card strong,
+.feature-swipe:has(.card.dragging) .feature-card strong {
+  margin: 0;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .feature-swipe.done .feature-card {
@@ -1794,6 +1856,14 @@ async function toggleSub(task, subtask) {
 .backup-nag .later {
   background: var(--bg-soft);
   color: var(--amber);
+}
+
+.backup-nag button:disabled {
+  opacity: 0.5;
+}
+
+.hidden {
+  display: none;
 }
 
 .editor-sheet {

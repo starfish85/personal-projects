@@ -11,6 +11,7 @@ import {
   removeAsset,
   removeCheckin,
   saveTaskNote,
+  taskNoteOn,
   taskHasComponent,
   taskHasGallery,
   taskLogsImages,
@@ -66,14 +67,16 @@ const timerStateLabel = computed(() => {
 })
 
 watch(
-  () => practice.task.id,
-  (id, prev) => {
-    if (prev && timerOn.value) settleSegment()
-    noteDraft.value = practice.taskNotes[id] || ''
-    window.clearInterval(timer)
-    timerOn.value = false
-    timerSeconds.value = timerMode.value === 'down' ? timerMinutes.value * 60 : 0
-    sessionAnchor = timerSeconds.value
+  () => [practice.task.id, practice.date],
+  ([id, date], prev) => {
+    if (prev?.[0] && prev[0] !== id && timerOn.value) settleSegment()
+    noteDraft.value = taskNoteOn(id, date)
+    if (!prev || prev[0] !== id) {
+      window.clearInterval(timer)
+      timerOn.value = false
+      timerSeconds.value = timerMode.value === 'down' ? timerMinutes.value * 60 : 0
+      sessionAnchor = timerSeconds.value
+    }
   },
   { immediate: true },
 )
@@ -268,7 +271,7 @@ onBeforeUnmount(() => {
       <div class="panel-head">
         <div>
           <strong>批注</strong>
-          <span>文字会同步</span>
+          <span>今天 · {{ practice.date }}</span>
         </div>
         <button type="button" class="mini" @click="saveNote">保存</button>
       </div>

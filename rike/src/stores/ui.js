@@ -15,6 +15,11 @@ export function toast(message) {
   }, 2400)
 }
 
+export function clearToast() {
+  ui.toast = ''
+  window.clearTimeout(toastTimer)
+}
+
 export function confirmDialog({ title, copy, ok = '确定', danger = false }) {
   return new Promise((resolve) => {
     ui.confirm = {

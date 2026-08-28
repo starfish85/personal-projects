@@ -116,7 +116,8 @@ img {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--tab-h) + 12px);
+  top: calc(16px + var(--safe-top));
+  bottom: auto;
   transform: translateX(-50%);
   z-index: 80;
   max-width: min(86vw, 360px);
@@ -128,11 +129,6 @@ img {
   line-height: 1.45;
   box-shadow: var(--shadow);
   pointer-events: none;
-}
-
-.app:has(.modal-mask) .toast {
-  bottom: auto;
-  top: calc(16px + var(--safe-top));
 }
 
 .modal-mask {

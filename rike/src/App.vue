@@ -1,13 +1,18 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import TabBar from './components/TabBar.vue'
 import { ensureToday, practice } from './stores/practice'
-import { ui } from './stores/ui'
+import { clearToast, ui } from './stores/ui'
 import { startReminders } from './utils/remind'
 
 const route = useRoute()
 const showTab = computed(() => route.meta.tab === true)
+
+watch(
+  () => route.fullPath,
+  () => clearToast(),
+)
 
 onMounted(() => {
   startReminders()

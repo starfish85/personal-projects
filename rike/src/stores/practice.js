@@ -32,6 +32,7 @@ export const TASK_TEMPLATES = [
     completion: 'counter',
     sheet: true,
     notes: true,
+    longTerm: true,
     components: ['pomodoro', 'sheet', 'annotation', 'notes'],
     summary: '计数、番茄钟、曲谱、批注、笔记',
   },
@@ -43,6 +44,7 @@ export const TASK_TEMPLATES = [
     completion: 'photo-log',
     sheet: false,
     notes: false,
+    longTerm: true,
     components: ['annotation', 'notes'],
     summary: '图片打卡、批注、笔记',
   },
@@ -54,6 +56,7 @@ export const TASK_TEMPLATES = [
     completion: 'check',
     sheet: false,
     notes: true,
+    longTerm: true,
     components: ['pomodoro', 'notes'],
     summary: '打卡、番茄钟、笔记、可添加子任务',
   },
@@ -65,6 +68,7 @@ export const TASK_TEMPLATES = [
     completion: 'counter',
     sheet: false,
     notes: false,
+    longTerm: true,
     components: ['counter', 'pomodoro', 'images', 'notes'],
     summary: '计数器、番茄钟、图片打卡、日记',
   },
@@ -76,6 +80,7 @@ export const TASK_TEMPLATES = [
     completion: 'check',
     sheet: false,
     notes: false,
+    longTerm: true,
     components: ['notes'],
     summary: '普通打卡、可添加子任务、日记',
   },
@@ -87,6 +92,7 @@ export const TASK_TEMPLATES = [
     completion: 'check',
     sheet: false,
     notes: false,
+    longTerm: false,
     components: [],
     summary: '普通打卡',
   },
@@ -125,6 +131,7 @@ export const practice = reactive({
   lastBackupAt: '',
   viewingDate: '',
   byPiece: {},
+  taskNoteHistory: {},
 })
 
 function readInk() {
@@ -641,17 +648,55 @@ function defaultTasks(guitar, drawing) {
   ]
 }
 
-async function migrateLocalData() {
-  const version = (await db.kvGet('schemaVersion')) || 0
-  if (version >= 3) return
-  const tasks = await db.kvGet('tasks')
-  if (!Array.isArray(tasks)) {
-    await db.kvSet('schemaVersion', 3)
-    return
+const TASK_NOTE_DAY_RE = /^(.*)\.(\d{4}-\d{2}-\d{2})$/
+
+export function parseTaskNoteKey(key) {
+  if (!String(key).startsWith('taskNote.')) return null
+  const rest = key.slice(9)
+  const match = rest.match(TASK_NOTE_DAY_RE)
+  if (match) return { taskId: match[1], date: match[2] }
+  return { taskId: rest, date: null }
+}
+
+async function migrateTaskNotesToDated() {
+  const kv = await db.kvGetAll()
+  const today = localDateKey()
+  const datedByTask = new Set()
+  for (const key of Object.keys(kv)) {
+    const parsed = parseTaskNoteKey(key)
+    if (parsed?.date) datedByTask.add(parsed.taskId)
   }
-  const normalized = tasks.map(normalizeTask)
-  await db.kvSet('tasks', clonePlain(normalized))
-  await db.kvSet('schemaVersion', 3)
+  let n = 0
+  for (const [key, value] of Object.entries(kv)) {
+    const parsed = parseTaskNoteKey(key)
+    if (!parsed || parsed.date) continue
+    if (datedByTask.has(parsed.taskId)) continue
+    const text = String(value?.text || '')
+    if (!text.trim()) continue
+    await db.kvSet(`taskNote.${parsed.taskId}.${today}`, {
+      text,
+      updatedAt: value?.updatedAt || new Date().toISOString(),
+    })
+    n += 1
+  }
+  if (n) console.info('[rike] migrated task notes', n)
+}
+
+async function migrateLocalData() {
+  let version = Number((await db.kvGet('schemaVersion')) || 0) || 0
+  if (version < 3) {
+    const tasks = await db.kvGet('tasks')
+    if (Array.isArray(tasks)) {
+      const normalized = tasks.map(normalizeTask)
+      await db.kvSet('tasks', clonePlain(normalized))
+    }
+    version = 3
+  }
+  if (version < 4) {
+    await migrateTaskNotesToDated()
+    version = 4
+  }
+  await db.kvSet('schemaVersion', version)
 }
 
 async function loadTasks() {
@@ -1021,28 +1066,68 @@ export async function loadTaskNotes() {
   const kv = await db.kvGetAll()
   const texts = {}
   const stamps = {}
+  const history = {}
   for (const [key, value] of Object.entries(kv)) {
-    if (!key.startsWith('taskNote.')) continue
-    const taskId = key.slice(9)
-    texts[taskId] = value?.text || ''
-    stamps[taskId] = value?.updatedAt || ''
+    const parsed = parseTaskNoteKey(key)
+    if (!parsed) continue
+    const rec = { text: String(value?.text || ''), updatedAt: value?.updatedAt || '' }
+    if (parsed.date) {
+      if (!history[parsed.taskId]) history[parsed.taskId] = {}
+      history[parsed.taskId][parsed.date] = rec
+    } else {
+      texts[parsed.taskId] = rec.text
+      stamps[parsed.taskId] = rec.updatedAt
+    }
   }
   practice.taskNotes = texts
   practice.taskNotesUpdatedAt = stamps
+  practice.taskNoteHistory = history
+}
+
+export function taskNoteOn(taskId, date) {
+  return String(practice.taskNoteHistory[taskId]?.[date]?.text || '')
+}
+
+export function listTaskNoteEntries({ taskId } = {}) {
+  const today = localDateKey()
+  const out = []
+  const source = taskId
+    ? { [taskId]: practice.taskNoteHistory[taskId] || {} }
+    : practice.taskNoteHistory
+  for (const [id, days] of Object.entries(source)) {
+    for (const [date, rec] of Object.entries(days || {})) {
+      if (date > today) continue
+      const text = String(rec?.text || '')
+      if (!text.trim()) continue
+      out.push({ taskId: id, date, text, updatedAt: rec?.updatedAt || '' })
+    }
+  }
+  out.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  return out
+}
+
+export function reviewableNoteTasks() {
+  const today = localDateKey()
+  return practice.tasks.filter((task) => {
+    if (!task.longTerm) return false
+    const days = practice.taskNoteHistory[task.id] || {}
+    return Object.entries(days).some(
+      ([date, rec]) => date <= today && String(rec?.text || '').trim(),
+    )
+  })
 }
 
 export async function saveTaskNote(taskId, text) {
+  const day = localDateKey()
   const clean = String(text || '')
-  practice.taskNotes[taskId] = clean
-  const key = `taskNote.${taskId}`
   const updatedAt = new Date().toISOString()
+  const rec = { text: clean, updatedAt }
+  await db.kvSet(`taskNote.${taskId}.${day}`, rec)
+  await db.kvSet(`taskNote.${taskId}`, rec)
+  if (!practice.taskNoteHistory[taskId]) practice.taskNoteHistory[taskId] = {}
+  practice.taskNoteHistory[taskId][day] = rec
+  practice.taskNotes[taskId] = clean
   practice.taskNotesUpdatedAt[taskId] = updatedAt
-  if (!clean.trim()) {
-    await db.kvSet(key, { text: '', updatedAt })
-    notifyCloud()
-    return
-  }
-  await db.kvSet(key, { text: clean, updatedAt })
   notifyCloud()
 }
 
