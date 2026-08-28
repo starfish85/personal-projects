@@ -1,4 +1,6 @@
-const CACHE = 'pianyu-pwa-1'
+const CACHE_PREFIX = 'pianyu-pwa-'
+const CACHE = 'pianyu-pwa-2'
+const SCOPE_PATH = new URL('./', self.location.href).pathname
 
 const PRECACHE = [
   './',
@@ -10,6 +12,10 @@ const PRECACHE = [
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
 ]
+
+function inScope(url) {
+  return url.origin === self.location.origin && url.pathname.startsWith(SCOPE_PATH)
+}
 
 function shouldBypass(url) {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return true
@@ -31,7 +37,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE).map((key) => caches.delete(key))),
+      )
       .then(() => self.clients.claim()),
   )
 })
@@ -41,7 +49,7 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return
   const url = new URL(req.url)
   if (shouldBypass(url)) return
-  if (url.origin !== self.location.origin) return
+  if (!inScope(url)) return
 
   if (req.mode === 'navigate') {
     event.respondWith(
