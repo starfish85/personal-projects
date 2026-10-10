@@ -4,22 +4,24 @@
  * ============================================================
  * 职责：把照片发给多模态大模型，拿回结构化的识别结果。
  *
- * 技术选型：智谱 GLM-4.6V-Flash（免费视觉模型），
+ * 技术选型：DeepSeek deepseek-flash（V4.1 Flash，原生支持图片理解），
  * 接口格式遵循 OpenAI 兼容协议（行业事实标准，换厂商只需改地址和模型名）。
  *
  * 安全说明：API Key 只保存在用户自己手机的 localStorage 里，
- * 请求从浏览器直连智谱服务器，不经过任何第三方。
+ * 请求从浏览器直连 DeepSeek 服务器，不经过任何第三方。
  * 将来若要对公众开放，把 endpoint 换成自己的云函数地址即可，其余代码不用动。
  * ============================================================
  */
 
-// localStorage 里存配置的键名（相当于浏览器里的一张"小纸条"）
-const CFG_KEY = 'dafushan-vision-config'
+// localStorage 里存配置的键名（相当于浏览器里的一张"小纸条"）。
+// 带 v2 后缀：v1 时代默认厂商是智谱，换 DeepSeek 后旧配置里的地址/模型/Key
+// 都已失效，用新键名让老用户自动落到新默认值，重新填一次 Key 即可。
+const CFG_KEY = 'dafushan-vision-config-v2'
 
 // 默认配置：接口地址 + 模型名（用户可在设置面板里覆盖）
 export const VISION_DEFAULT = {
-  endpoint: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
-  model: 'glm-4.6v-flash',
+  endpoint: 'https://api.deepseek.com/chat/completions',
+  model: 'deepseek-flash',
 }
 
 /**

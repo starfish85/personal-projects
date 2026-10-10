@@ -234,7 +234,7 @@ onBeforeUnmount(() => {
           <input
             v-model="cfg.apiKey"
             type="password"
-            placeholder="粘贴智谱开放平台的 API Key"
+            placeholder="粘贴 DeepSeek 的 API Key"
             autocomplete="off"
           />
         </label>
@@ -250,8 +250,8 @@ onBeforeUnmount(() => {
           </label>
         </details>
         <p class="howto">
-          免费 Key 获取：用电脑或手机浏览器打开
-          <strong>open.bigmodel.cn</strong>，注册后在「API Keys」里创建并复制，粘贴到上面。
+          Key 获取：用电脑或手机浏览器打开
+          <strong>platform.deepseek.com</strong>，注册后在「API keys」里创建并复制，粘贴到上面。
           Key 只保存在您自己的手机上。
         </p>
         <button class="primary-btn" @click="saveSettings">保存</button>
