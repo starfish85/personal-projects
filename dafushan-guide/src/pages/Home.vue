@@ -67,6 +67,15 @@ function search() {
         <input v-model="keyword" type="search" placeholder="想去哪里？" enterkeyhint="search" />
       </form>
 
+      <button class="card ai-entry" @click="router.push({ name: 'recognize' })">
+        <span class="ai-mark">花</span>
+        <span class="ai-text">
+          <strong>拍照识花</strong>
+          <em>AI 辨认花草，还能讲给您听</em>
+        </span>
+        <span class="ai-go">去</span>
+      </button>
+
       <button class="card map-entry" @click="router.push({ name: 'map' })">
         <img :src="`${base}maps/park-thumb.jpg?v=3`" alt="" />
         <span class="map-cta">查看完整地图</span>
@@ -221,6 +230,58 @@ function search() {
   color: var(--primary);
   font-size: 22px;
   font-weight: 700;
+}
+.ai-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 10px 10px;
+  text-align: left;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  background: linear-gradient(135deg, #fff 60%, #fde8ef);
+}
+.ai-mark {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #fde8ef;
+  color: #c2255c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 800;
+  flex: none;
+}
+.ai-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.ai-text strong {
+  font-size: var(--fs-md);
+  color: #c2255c;
+}
+.ai-text em {
+  font-style: normal;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-weight: 700;
+}
+.ai-go {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f8d4e2;
+  color: #c2255c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  flex: none;
 }
 .map-entry {
   display: flex;

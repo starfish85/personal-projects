@@ -10,6 +10,7 @@ import Mine from '../pages/Mine.vue'
 import Help from '../pages/Help.vue'
 import RoutePage from '../pages/RoutePage.vue'
 import Fonts from '../pages/Fonts.vue'
+import Recognize from '../pages/Recognize.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -22,6 +23,7 @@ const router = createRouter({
     { path: '/poi/:id', name: 'detail', component: Detail },
     { path: '/navigate/:id', name: 'navigate', component: Navigate },
     { path: '/help', name: 'help', component: Help },
+    { path: '/recognize', name: 'recognize', component: Recognize },
     { path: '/route/:id', name: 'route', component: RoutePage },
     { path: '/mine', name: 'mine', component: Mine },
     { path: '/:pathMatch(.*)*', redirect: '/home' },
