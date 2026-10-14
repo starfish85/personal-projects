@@ -12,7 +12,7 @@
   --user: #1570ef;
   --tab: #f4faf3;
   --shadow: 0 10px 28px rgba(20, 51, 28, 0.08);
-  --radius: 20px;
+  --radius: 16px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --tab-h: calc(64px + env(safe-area-inset-bottom, 0px));
@@ -214,6 +214,11 @@ img {
   font-weight: 700;
 }
 
+/* 可点击卡片的按压反馈：轻微变暗，让老人确认"点上了" */
+button.card:active {
+  filter: brightness(0.94);
+}
+
 .search-box {
   display: flex;
   align-items: center;
@@ -224,7 +229,7 @@ img {
   padding: 0 18px;
   background: #fff;
   border-radius: 999px;
-  border: 1px solid #d7e6d4;
+  border: 2px solid #8fae91;
   box-shadow: var(--shadow);
 }
 
@@ -283,9 +288,10 @@ img {
   transform: translateX(-50%);
   background: #161616;
   color: #fff;
-  padding: 12px 18px;
+  padding: 14px 20px;
   border-radius: 12px;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
+  font-weight: 700;
   z-index: 50;
   max-width: min(420px, 90vw);
   text-align: center;

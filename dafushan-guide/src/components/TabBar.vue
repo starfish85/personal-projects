@@ -46,18 +46,23 @@ function go(name) {
   box-shadow: 0 -8px 24px rgba(20, 51, 28, 0.06);
   z-index: 20;
 }
+/* 适老 Tab：文字≥16px 加粗，选中项变色+加粗双重提示（不只靠颜色） */
 .tab {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  color: #6b8170;
-  font-size: var(--fs-xs);
+  color: #44564a;
+  font-size: var(--fs-sm);
   font-weight: 700;
 }
 .tab.on {
   color: var(--primary);
+  font-weight: 800;
+}
+.tab.on .ico {
+  transform: scale(1.15);
 }
 .tab.help {
   color: #b42318;
@@ -66,7 +71,7 @@ function go(name) {
   color: #8b1a12;
 }
 .ico {
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1;
 }
 </style>

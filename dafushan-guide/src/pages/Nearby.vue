@@ -56,7 +56,7 @@ function meta(poi) {
           <em v-else>定位后显示距离</em>
           <small v-if="poi.intro" class="intro">{{ poi.intro }}</small>
         </span>
-        <span class="go">去</span>
+        
       </button>
     </div>
   </main>

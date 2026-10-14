@@ -11,6 +11,8 @@ import Help from '../pages/Help.vue'
 import RoutePage from '../pages/RoutePage.vue'
 import Fonts from '../pages/Fonts.vue'
 import Recognize from '../pages/Recognize.vue'
+import SmartRoute from '../pages/SmartRoute.vue'
+import Benchmark from '../pages/Benchmark.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -24,6 +26,9 @@ const router = createRouter({
     { path: '/navigate/:id', name: 'navigate', component: Navigate },
     { path: '/help', name: 'help', component: Help },
     { path: '/recognize', name: 'recognize', component: Recognize },
+    { path: '/smart-route', name: 'smart-route', component: SmartRoute },
+    // 算法实验对比页：不进入底部导航，仅供答辩演示，通过 #/benchmark 访问
+    { path: '/benchmark', name: 'benchmark', component: Benchmark, meta: { tab: false } },
     { path: '/route/:id', name: 'route', component: RoutePage },
     { path: '/mine', name: 'mine', component: Mine },
     { path: '/:pathMatch(.*)*', redirect: '/home' },
