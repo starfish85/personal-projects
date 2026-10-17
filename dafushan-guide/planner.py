@@ -8,10 +8,10 @@ WALK_SPEED = 60.0
 DEFAULT_VISIT_MIN = 15
 
 STYLE_PRESETS = {
-    "休闲漫游": {"speed": 50, "visit_coef": 1.3},
-    "运动拉练": {"speed": 80, "visit_coef": 0.7},
-    "亲子遛娃": {"speed": 40, "visit_coef": 1.5},
-    "历史打卡": {"speed": 60, "visit_coef": 1.0},
+    "休闲漫游": {"speed": 50, "visit_coef": 1.3,"default_time": 180},
+    "运动拉练": {"speed": 80, "visit_coef": 0.7,"default_time": 150},
+    "亲子遛娃": {"speed": 40, "visit_coef": 1.5,"default_time": 120},
+    "历史打卡": {"speed": 60, "visit_coef": 1.0,"default_time": 100},
 }
 
 def load_matrix():
@@ -76,16 +76,20 @@ def mmr_diversity(candidates,k=3,lambda_d=0.5):
             chosen.append(best)
     return chosen
 
-def plan_route(start_id, time_budget_min, interests=None, style=None,
+def plan_route(start_id, time_budget_min=None, interests=None, style=None,
                 max_distance_m=None, matrix=None,pois=None):
     if matrix is None:
         matrix = load_matrix()
     if pois is None:
         pois = load_pois()
+    if time_budget_min is None:
+        present = STYLE_PRESETS.get(style, {})
+        time_budget_min = present.get("default_time",120)
 
-    preset = STYLE_PRESETS.get(style, {})
-    walk_speed = preset.get("speed", WALK_SPEED)
-    visit_coef = preset.get("visit_coef", 1.0)
+
+    present = STYLE_PRESETS.get(style, {})
+    walk_speed = present.get("speed", WALK_SPEED)
+    visit_coef = present.get("visit_coef", 1.0)
 
     poi_map = {p["id"]: p for p in pois}
     interests = interests or []
@@ -126,7 +130,6 @@ def plan_route(start_id, time_budget_min, interests=None, style=None,
                     continue
 
                 walk_min = d / walk_speed
-                # visit_min = poi.get("recommendMin") or default_visit
                 base_min = poi.get("recommendMin") or DEFAULT_VISIT_MIN
                 visit_min = base_min * visit_coef
                 new_minutes = state["minutes"] + walk_min + visit_min
@@ -187,7 +190,7 @@ if __name__ == "__main__":
     matrix = load_matrix()
 
     for style in STYLE_PRESETS:
-        result = plan_route("gate-south", 180, ["自然"], style=style,
+        result = plan_route("gate-south", None, ["自然"], style=style,
                             matrix=matrix, pois=pois)
         print(f"=== {style}（步速{STYLE_PRESETS[style]['speed']}m/min) ===")
         for rank, route in enumerate(result, 1):
