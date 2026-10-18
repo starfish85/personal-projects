@@ -17,10 +17,41 @@ const poi = computed(() => {
   return withDistance([raw], userPoint())[0]
 })
 const meta = computed(() => (poi.value ? TYPE_META[poi.value.type] : null))
+
+// 路线模式：query.ids 里带了一整条路线的景点 id（来自智能路线「详情」跳转）
+const routePois = computed(() => {
+  const ids = route.query.ids
+  if (!ids) return []
+  return String(ids)
+    .split(',')
+    .map((id) => getPoi(id))
+    .filter(Boolean)
+})
+const isRoute = computed(() => routePois.value.length > 0)
 </script>
 
 <template>
-  <main v-if="poi" class="page detail">
+  <!-- 路线模式：展示一条路线上的所有景点介绍 -->
+  <main v-if="isRoute" class="page detail">
+    <header class="page-head">
+      <button class="icon-btn" aria-label="返回" @click="router.back()">‹</button>
+      <h1>路线景点介绍</h1>
+      <span class="icon-btn" />
+    </header>
+    <section class="pad">
+      <article v-for="p in routePois" :key="p.id" class="card route-poi">
+        <div class="route-poi-head">
+          <span class="type" :style="{ background: TYPE_META[p.type].color, color: TYPE_META[p.type].ink }">
+            {{ TYPE_META[p.type].icon }}
+          </span>
+          <h3>{{ p.name }}</h3>
+        </div>
+        <p class="route-poi-intro">{{ p.intro }}</p>
+      </article>
+    </section>
+  </main>
+
+  <main v-else-if="poi" class="page detail">
     <header class="page-head">
       <button class="icon-btn" aria-label="返回" @click="router.back()">‹</button>
       <h1>地点详情</h1>

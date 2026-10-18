@@ -210,7 +210,7 @@ function planCore(req, kind) {
 
   const feasible =
     summary.totalMin <= timeBudget && summary.totalDistance <= maxWalking
-
+// 路线传输数据
   const route = {
     kind,
     stops: summary.stops,
@@ -378,6 +378,7 @@ function insertRest(seq, req, strategy, gate, walkBetween, exitGates) {
 }
 
 /** 逐段汇总：把景点序列 + 起终点换算成可展示的距离/时间指标 */
+// 单个景点传输数据
 function summarize(seq, gate, exitGate, walkBetween) {
   const stops = []
   let prev = gate
@@ -455,3 +456,91 @@ function buildAdvice(summary, req, prefHits) {
   }
   return advice
 }
+
+
+//参考planner.py 修改函数算法,每条路线不重复
+ // 1) Jaccard 相似度：两条路线的景点集合有多像（0 完全不同 ~ 1 完全一样）
+  function jaccard(a, b) {
+    const sa = new Set(a)
+    const sb = new Set(b)
+    if (!sa.size || !sb.size) return 0
+    let both = 0
+    for (const x of sa) if (sb.has(x)) both++
+    return both / (sa.size + sb.size - both)
+  }
+
+  // 2) 帕累托支配：a 在「得分↑ 时间↓ 距离↓」上全面不差于 b，且至少一项更好
+  function dominates(a, b, eps = 1e-9) {
+    const worse =
+      a.score + eps < b.score ||
+      a.minutes - eps > b.minutes ||
+      a.meters - eps > b.meters
+    if (worse) return false
+    return (
+      a.score > b.score + eps ||
+      a.minutes < b.minutes - eps ||
+      a.meters < b.meters - eps
+    )
+  }
+
+  // 3) 帕累托过滤：按「终点 + 景点集合」分组，组内去掉被支配的候选
+  function paretoFilter(states) {
+    const groups = new Map()
+    for (const s of states) {
+      const key = `${s.stops[s.stops.length - 1]}|${[...s.stops].sort().join(',')}`
+      if (!groups.has(key)) groups.set(key, [])
+      groups.get(key).push(s)
+    }
+    const out = []
+    for (const group of groups.values()) {
+      for (const cand of group) {
+        const dominated = group.some((other) => other !== cand && dominates(other, cand))
+        if (!dominated) out.push(cand)
+      }
+    }
+    return out
+  }
+
+  // 4) MMR：在帕累托前沿里挑 k 条「得分高且彼此不重复」的路线
+  function mmrDiversity(candidates, k = 3, lambda = 0.5) {
+    if (!candidates.length) return []
+    const sorted = [...candidates].sort((a, b) => b.score - a.score)
+    const chosen = [sorted[0]]              // 得分最高的先进结果
+    while (chosen.length < k && chosen.length < sorted.length) {
+      let best = null, bestMmr = -Infinity
+      for (const c of sorted) {
+        if (chosen.includes(c)) continue
+        const sim = Math.max(...chosen.map((prev) => jaccard(c.stops, prev.stops)))
+        if (sim > 0.7) continue            // 跟已选的太像，跳过
+        const mmr = c.score - lambda * sim
+        if (mmr > bestMmr) { best = c; bestMmr = mmr }
+      }
+      if (best) chosen.push(best)
+      else break
+    }
+    return chosen
+  }
+
+   function toCandidate(route) {
+    return {
+      route,
+      stops: route.stops.filter((s) => !s.isRest).map((s) => s.id),
+      score: route.metrics.totalInterest,
+      minutes: route.totalMin,
+      meters: route.totalDistance,
+    }
+  }
+  const pool = [
+    planCore(req, 'multi'),
+    planCore(req, 'oldgreedy'),
+    planCore(req, 'nearest'),
+    planCore(req, 'interest'),
+  ].filter(Boolean)
+
+   export function planRoutes(req, k = 3) {
+    const pool = generatePool(req)                 // 第二步的候选池
+    const candidates = pool.map(toCandidate)       // 转成 { stops, score, minutes, meters }
+    const frontier = paretoFilter(candidates)      // 帕累托过滤
+    const picks = mmrDiversity(frontier, k, 0.5)   // 挑 k 条多样化
+    return picks.map((p) => p.route)               // 返回 k 条完整 route
+  }

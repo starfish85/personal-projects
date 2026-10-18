@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { parseRequirement } from '../utils/requirementParser'
-import { planRoute } from '../utils/routePlanner'
+import { planRoutes } from '../utils/routePlanner'
 import { formatDistance } from '../utils/geo'
 import { CATEGORIES, getPoi } from '../data/pois'
 import { buildRoute } from '../data/paths'
@@ -15,8 +15,16 @@ const input = ref('')           // 用户输入的自然语言需求
 const loading = ref(false)      // 是否正在请求 LLM
 const error = ref('')           // 错误提示
 const requirement = ref(null)   // LLM 解析出的结构化需求
-const route = ref(null)         // 算法规划出的路线
-const routePoints = ref([])     // 地图折线：把各段真实路网拼接起来
+const route = ref(null)          // 当前展示/选中的路线方案
+const plans = ref([])            // 多个路线方案（方案1 / 方案2）
+const selectedPlanId = ref(null) // 用户选中的方案 id
+
+// 地图折线：把当前方案的各段真实路网拼接起来（route 变化时自动重算）
+const routePoints = computed(() =>
+  route.value && requirement.value
+    ? buildPolyline(requirement.value.startGate, route.value)
+    : []
+)
 
 // 地图上要打的点（从 stops 换成带 type 的完整 POI，供地图组件渲染标记）
 const stopPois = computed(() =>
@@ -34,6 +42,35 @@ function useExample(text) {
   input.value = text
 }
 
+// 拼接一个方案的景点名：景点A → 景点B → …
+const planStopsText = (plan) =>
+  plan.stops.length ? plan.stops.map((s) => s.name).join(' → ') : '暂无推荐景点'
+
+// 点选/取消点选某个方案（白 → 浅灰表示选中），并把它设为当前展示路线
+function selectPlan(id) {
+  selectedPlanId.value = selectedPlanId.value === id ? null : id
+  const plan = plans.value.find((p) => p.id === id)
+  if (plan) route.value = plan
+}
+
+// 只有选中了方案后才能开始导航，导航到该方案第一个景点
+function goNavigate() {
+  if (!selectedPlanId.value) return
+  const plan = plans.value.find((p) => p.id === selectedPlanId.value)
+  if (!plan || !plan.stops.length) return
+  router.push({ name: 'navigate', params: { id: plan.stops[0].id } })
+}
+
+// 跳转到详情页，展示该方案整条路线的所有景点介绍
+function showPlanDetail(plan) {
+  if (!plan.stops.length) return
+  router.push({
+    name: 'detail',
+    params: { id: plan.stops[0].id },
+    query: { ids: plan.stops.map((s) => s.id).join(',') },
+  })
+}
+
 // ── 核心：解析需求 + 规划路线 ──
 // 这是整个页面的主流程，分两步：
 //   1. parseRequirement：自然语言 → 结构化需求（有 Key 走 LLM，无 Key 自动用规则解析）
@@ -48,18 +85,19 @@ async function plan() {
   error.value = ''
   requirement.value = null
   route.value = null
-  routePoints.value = []
+  plans.value = []
+  selectedPlanId.value = null
 
   try {
     // 第一步：解析需求（异步；无 API Key 时自动降级为本地规则解析，不阻塞演示）
     const req = await parseRequirement(input.value)
     requirement.value = req
 
-    // 第二步：多目标路线规划（同步，在浏览器端跑）
-    const result = planRoute(req)
-    route.value = result
-    // 第三步：把路线展开成地图折线（各段用真实路网点拼接）
-    routePoints.value = buildPolyline(req.startGate, result)
+    // 第二步：生成多条多样化路线方案（帕累托 + MMR，同步在浏览器端跑）
+    const routes = planRoutes(req, 3)
+    plans.value = routes.map((r, i) => ({ ...r, id: `plan-${i + 1}` }))
+    // 默认展示方案1（地图折线 routePoints 随 route 变化自动重算）
+    route.value = plans.value[0]
   } catch (e) {
     // 任何环节出错都显示给用户
     error.value = e.message || '解析失败，请重试'
@@ -212,20 +250,24 @@ const toleranceLabel = (t) =>
       <div v-if="routePoints.length" class="map-box">
         <ParkMap :route="routePoints" :pois="stopPois" />
       </div>
-
       <ol class="stops">
-        <li v-for="(stop, idx) in route.stops" :key="stop.id" class="stop">
+        <li
+          v-for="(plan, idx) in plans"
+          :key="plan.id"
+          class="stop"
+          :class="{ selected: selectedPlanId === plan.id }"
+          @click="selectPlan(plan.id)"
+        >
           <span class="stop-num">{{ idx + 1 }}</span>
           <div class="stop-info">
-            <strong>{{ stop.name }}</strong>
-            <span class="stop-cat">{{ categoryLabel(stop.category) }}</span>
-            <span v-if="stop.isRest" class="stop-rest">休息点</span>
+            <strong>方案{{ idx + 1 }}</strong>
+            <span class="stop-cat">{{ planStopsText(plan) }}</span>
           </div>
           <div class="stop-meta">
-            <span>走{{ stop.walkMin }}分钟</span>
-            <span>停{{ stop.recommendMin }}分钟</span>
+            <span>时间{{ plan.totalMin }}分钟</span>
+            <span>距离{{ formatDistance(plan.totalDistance) }}</span>
           </div>
-          <button class="stop-go" @click="router.push({ name: 'detail', params: { id: stop.id } })">详情</button>
+          <button class="stop-go" @click.stop="showPlanDetail(plan)">详情</button>
         </li>
       </ol>
 
@@ -240,7 +282,7 @@ const toleranceLabel = (t) =>
         </ul>
       </div>
 
-      <button class="navigate-btn" @click="route.stops[0] && router.push({ name: 'navigate', params: { id: route.stops[0].id } })">
+      <button class="navigate-btn" :disabled="!selectedPlanId" @click="goNavigate">
         开始导航
       </button>
     </section>
@@ -503,8 +545,12 @@ const toleranceLabel = (t) =>
   align-items: center;
   gap: 10px;
   padding: 10px;
-  background: var(--surface-2);
+  background: #fff;
   border-radius: 10px;
+  cursor: pointer;
+}
+.stop.selected {
+  background: #f0f0f0;
 }
 .stop-num {
   width: 28px;
@@ -577,5 +623,10 @@ const toleranceLabel = (t) =>
   font-size: var(--fs-base);
   font-weight: 700;
   cursor: pointer;
+}
+/* 未选中方案时：浅绿色、不可点击；选中后恢复主色 */
+.navigate-btn:disabled {
+  background: #a5d6a7;
+  cursor: not-allowed;
 }
 </style>
